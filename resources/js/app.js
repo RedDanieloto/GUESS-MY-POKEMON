@@ -97,6 +97,15 @@ const authLoginBtn = document.getElementById('auth-login-btn');
 const authGoogleBtn = document.getElementById('auth-google-btn');
 const authLogoutBtn = document.getElementById('auth-logout-btn');
 const authStatus = document.getElementById('auth-status');
+const authFields = [
+    authNameInput,
+    authEmailInput,
+    authPasswordInput,
+    authPasswordConfirmInput,
+    authRegisterBtn,
+    authLoginBtn,
+    authGoogleBtn,
+].filter(Boolean);
 
 const profileNicknameInput = document.getElementById('profile-nickname');
 const profileTierSelect = document.getElementById('profile-tier');
@@ -200,6 +209,7 @@ async function api(path, options = {}) {
 
     if (options.auth && state.authToken) {
         config.headers.Authorization = `Bearer ${state.authToken}`;
+        config.headers['X-Auth-Token'] = state.authToken;
     }
 
     if (options.data) {
@@ -247,11 +257,13 @@ function renderAuthStatus() {
     if (!state.authUser) {
         authStatus.textContent = t('guestMode');
         authLogoutBtn.classList.add('hidden');
+        authFields.forEach((element) => element.classList.remove('hidden'));
         return;
     }
 
     authStatus.textContent = `${t('loggedAs')}: ${state.authUser.name} (${state.authUser.email})`;
     authLogoutBtn.classList.remove('hidden');
+    authFields.forEach((element) => element.classList.add('hidden'));
 }
 
 async function loadAuthMe() {

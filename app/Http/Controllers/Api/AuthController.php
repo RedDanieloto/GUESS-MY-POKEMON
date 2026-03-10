@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -65,7 +66,7 @@ class AuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $user = $this->resolveApiUser($request);
 
         if (! $user) {
             return response()->json(['user' => null], 401);
@@ -78,7 +79,8 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()?->currentAccessToken()?->delete();
+        $accessToken = $this->resolveAccessToken($request);
+        $accessToken?->delete();
 
         return response()->json([
             'message' => 'Sesión cerrada',
@@ -163,6 +165,26 @@ class AuthController extends Controller
     private function redirectWithAuthError(string $error): RedirectResponse
     {
         return redirect('/?'.http_build_query(['auth_error' => $error]));
+    }
+
+    private function resolveApiUser(Request $request): ?User
+    {
+        $accessToken = $this->resolveAccessToken($request);
+
+        return $accessToken?->tokenable instanceof User
+            ? $accessToken->tokenable
+            : null;
+    }
+
+    private function resolveAccessToken(Request $request): ?PersonalAccessToken
+    {
+        $plainTextToken = trim((string) ($request->bearerToken() ?: $request->header('X-Auth-Token', '')));
+
+        if ($plainTextToken === '') {
+            return null;
+        }
+
+        return PersonalAccessToken::findToken($plainTextToken);
     }
 
     private function userPayload(User $user): array
