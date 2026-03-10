@@ -32,6 +32,9 @@ const i18n = {
         wins: 'Victorias',
         games: 'Partidas',
         xpNext: 'XP para siguiente nivel',
+        authErrorSocialiteMissing: 'Login con Google no disponible en servidor (falta Socialite).',
+        authErrorGoogleRedirect: 'No se pudo iniciar login con Google.',
+        authErrorGoogleCallback: 'Google devolvió error al finalizar login.',
     },
     en: {
         syncing: 'Syncing...',
@@ -59,6 +62,9 @@ const i18n = {
         wins: 'Wins',
         games: 'Games',
         xpNext: 'XP for next level',
+        authErrorSocialiteMissing: 'Google login is not available on server (Socialite missing).',
+        authErrorGoogleRedirect: 'Could not start Google login.',
+        authErrorGoogleCallback: 'Google returned an error while finishing login.',
     },
 };
 
@@ -327,8 +333,23 @@ function consumeAuthFromUrl() {
     const token = params.get('auth_token');
     const authName = params.get('auth_name');
     const authEmail = params.get('auth_email');
+    const authError = params.get('auth_error');
+
+    if (authError) {
+        const map = {
+            socialite_missing: t('authErrorSocialiteMissing'),
+            google_redirect_failed: t('authErrorGoogleRedirect'),
+            google_callback_failed: t('authErrorGoogleCallback'),
+        };
+        authStatus.textContent = map[authError] || authError;
+    }
 
     if (!token) {
+        if (authError) {
+            params.delete('auth_error');
+            const cleanUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+            window.history.replaceState({}, document.title, cleanUrl);
+        }
         return;
     }
 
@@ -346,6 +367,7 @@ function consumeAuthFromUrl() {
     params.delete('auth_token');
     params.delete('auth_name');
     params.delete('auth_email');
+    params.delete('auth_error');
     const cleanUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
     window.history.replaceState({}, document.title, cleanUrl);
 }
@@ -861,7 +883,7 @@ function roomStateHtml(room) {
               .map(
                   (question) => `<div class="history-item">
                         <div><strong>${question.asked_by_name}</strong>: ${question.question_text}</div>
-                        <div class="inline-grid" style="grid-template-columns: repeat(3, 1fr)">
+                        <div class="answer-actions">
                             <button class="btn" type="button" data-action="answer" data-question-id="${question.id}" data-value="yes">Si</button>
                             <button class="btn" type="button" data-action="answer" data-question-id="${question.id}" data-value="no">No</button>
                             <button class="btn" type="button" data-action="answer" data-question-id="${question.id}" data-value="unknown">No se</button>

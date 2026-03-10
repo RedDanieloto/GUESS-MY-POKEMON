@@ -226,7 +226,9 @@ a.btn {
     color: #0f172a;
     font-weight: 800;
     font-size: 0.85rem;
-    padding: 0.5rem 0.3rem;
+    padding: 0.7rem 0.65rem;
+    min-height: 48px;
+    touch-action: manipulation;
 }
 
 .tab-btn.active {
@@ -278,7 +280,7 @@ a.btn {
     border-radius: 0.75rem;
     border: 2px solid #bfdbfe;
     padding: 0.65rem 0.8rem;
-    font-size: 0.93rem;
+    font-size: 1rem;
     font-family: inherit;
 }
 
@@ -294,10 +296,23 @@ a.btn {
     background: linear-gradient(180deg, #eff6ff, #dbeafe);
     color: #1e3a8a;
     font-weight: 800;
+    min-height: 48px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .btn:hover {
     filter: brightness(0.98);
+}
+
+.btn:active {
+    transform: translateY(1px) scale(0.99);
+}
+
+.btn:disabled,
+.search-item:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .btn-warm {
@@ -308,13 +323,25 @@ a.btn {
 
 .inline-grid {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     gap: 0.5rem;
     margin-top: 0.7rem;
 }
 
 .inline-grid .btn {
-    width: auto;
+    width: 100%;
+}
+
+.mode-tabs {
+    overflow-x: auto;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(112px, 1fr);
+    grid-template-columns: none;
+    scrollbar-width: thin;
+}
+
+.mode-tabs .tab-btn {
+    white-space: nowrap;
 }
 
 .list {
@@ -333,6 +360,7 @@ a.btn {
     grid-template-columns: 42px 1fr;
     gap: 0.55rem;
     align-items: center;
+    min-height: 58px;
 }
 
 .search-item img {
@@ -346,6 +374,14 @@ a.btn {
     text-align: left;
     font-weight: 700;
     color: #1e3a8a;
+    line-height: 1.2;
+}
+
+.answer-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    margin-top: 0.7rem;
 }
 
 .pokemon-card {
@@ -722,7 +758,23 @@ a.btn {
     }
 
     .mode-tabs {
+        overflow-x: visible;
+        grid-auto-flow: initial;
+        grid-auto-columns: initial;
+        grid-template-columns: repeat(4, 1fr);
         max-width: 560px;
+    }
+
+    .inline-grid {
+        grid-template-columns: 1fr auto;
+    }
+
+    .inline-grid .btn {
+        width: auto;
+    }
+
+    .answer-actions {
+        grid-template-columns: repeat(3, 1fr);
     }
 
     .achievements-grid {

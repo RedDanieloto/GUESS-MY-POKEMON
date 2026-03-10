@@ -14,6 +14,8 @@ use Laravel\Socialite\Facades\Socialite;
 
 class AuthController extends Controller
 {
+    private const SOCIALITE_CLASS = \Laravel\Socialite\Facades\Socialite::class;
+
     public function register(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -85,21 +87,37 @@ class AuthController extends Controller
 
     public function googleRedirect(Request $request): RedirectResponse
     {
+        if (! class_exists(self::SOCIALITE_CLASS)) {
+            return $this->redirectWithAuthError('socialite_missing');
+        }
+
         $state = [
             'player_token' => (string) $request->query('player_token', ''),
         ];
 
         $encodedState = base64_encode(json_encode($state));
 
-        return Socialite::driver('google')
-            ->stateless()
-            ->with(['state' => $encodedState])
-            ->redirect();
+        try {
+            return Socialite::driver('google')
+                ->stateless()
+                ->with(['state' => $encodedState])
+                ->redirect();
+        } catch (\Throwable) {
+            return $this->redirectWithAuthError('google_redirect_failed');
+        }
     }
 
     public function googleCallback(Request $request): RedirectResponse
     {
-        $googleUser = Socialite::driver('google')->stateless()->user();
+        if (! class_exists(self::SOCIALITE_CLASS)) {
+            return $this->redirectWithAuthError('socialite_missing');
+        }
+
+        try {
+            $googleUser = Socialite::driver('google')->stateless()->user();
+        } catch (\Throwable) {
+            return $this->redirectWithAuthError('google_callback_failed');
+        }
 
         $user = User::query()->where('google_id', $googleUser->id)->first();
 
@@ -140,6 +158,11 @@ class AuthController extends Controller
         ]);
 
         return redirect('/?'.$params);
+    }
+
+    private function redirectWithAuthError(string $error): RedirectResponse
+    {
+        return redirect('/?'.http_build_query(['auth_error' => $error]));
     }
 
     private function userPayload(User $user): array
