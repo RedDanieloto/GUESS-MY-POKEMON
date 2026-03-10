@@ -12,11 +12,16 @@ return new class extends Migration {
             $table->string('code', 8)->unique();
             $table->enum('mode', ['online', 'vs']);
             $table->enum('difficulty', ['normal', 'easy', 'hard'])->default('normal');
+            $table->enum('visibility', ['public', 'private'])->default('private');
+            $table->string('room_name', 60)->nullable();
+            $table->enum('language', ['es', 'en'])->default('es');
             $table->enum('status', ['waiting', 'active', 'finished'])->default('waiting');
             $table->string('host_session_id', 64);
             $table->string('turn_session_id', 64)->nullable();
             $table->string('winner_session_id', 64)->nullable();
             $table->timestamps();
+
+            $table->index(['mode', 'visibility', 'status']);
         });
     }
 

@@ -10,13 +10,27 @@ use Illuminate\Http\Request;
 
 class AchievementController extends Controller
 {
-    public function index(Request $request, AchievementService $achievementService): JsonResponse
+    /**
+     * Resolve profile from authenticated user or player_token
+     */
+    private function resolveProfile(Request $request): ?PlayerProfile
     {
+        // If user is authenticated, get their profile
+        if ($user = $request->user()) {
+            return PlayerProfile::query()->where('user_id', $user->id)->first();
+        }
+
+        // Otherwise, use player_token
         $validated = $request->validate([
             'player_token' => ['required', 'string', 'max:64'],
         ]);
 
-        $profile = PlayerProfile::query()->where('session_id', $validated['player_token'])->first();
+        return PlayerProfile::query()->where('session_id', $validated['player_token'])->first();
+    }
+
+    public function index(Request $request, AchievementService $achievementService): JsonResponse
+    {
+        $profile = $this->resolveProfile($request);
 
         if (! $profile) {
             return response()->json([

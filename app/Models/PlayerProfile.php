@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PlayerProfile extends Model
@@ -28,6 +29,14 @@ class PlayerProfile extends Model
     protected $casts = [
         'meta' => 'array',
     ];
+
+    /**
+     * Get the user associated with this profile.
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 
     public function achievements(): HasMany
     {

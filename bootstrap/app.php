@@ -15,7 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
         __DIR__.'/../app/Console/Commands',
     ])
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'auth.token.or.profile' => \App\Http\Middleware\AuthenticateWithTokenOrProfileToken::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

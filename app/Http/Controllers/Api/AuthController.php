@@ -66,7 +66,7 @@ class AuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        $user = $this->resolveApiUser($request);
+        $user = $request->user();
 
         if (! $user) {
             return response()->json(['user' => null], 401);
@@ -210,9 +210,8 @@ class AuthController extends Controller
             return;
         }
 
-        $meta = $profile->meta ?? [];
-        $meta['user_id'] = $user->id;
-        $profile->meta = $meta;
+        // Link the guest profile to the authenticated user
+        $profile->user_id = $user->id;
 
         if (! $profile->nickname) {
             $profile->nickname = $user->name;

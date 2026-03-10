@@ -10,13 +10,27 @@ use Illuminate\Http\Request;
 
 class GachaController extends Controller
 {
-    public function index(Request $request, GachaService $gachaService): JsonResponse
+    /**
+     * Resolve profile from authenticated user or player_token
+     */
+    private function resolveProfile(Request $request): ?PlayerProfile
     {
+        // If user is authenticated, get their profile
+        if ($user = $request->user()) {
+            return PlayerProfile::query()->where('user_id', $user->id)->first();
+        }
+
+        // Otherwise, use player_token
         $validated = $request->validate([
             'player_token' => ['required', 'string', 'max:64'],
         ]);
 
-        $profile = PlayerProfile::query()->where('session_id', $validated['player_token'])->first();
+        return PlayerProfile::query()->where('session_id', $validated['player_token'])->first();
+    }
+
+    public function index(Request $request, GachaService $gachaService): JsonResponse
+    {
+        $profile = $this->resolveProfile($request);
 
         if (! $profile) {
             return response()->json(['gacha' => null]);
@@ -29,11 +43,12 @@ class GachaController extends Controller
 
     public function open(Request $request, GachaService $gachaService): JsonResponse
     {
-        $validated = $request->validate([
-            'player_token' => ['required', 'string', 'max:64'],
-        ]);
+        $profile = $this->resolveProfile($request);
 
-        $profile = PlayerProfile::query()->where('session_id', $validated['player_token'])->firstOrFail();
+        if (! $profile) {
+            return response()->json(['message' => 'Perfil no encontrado'], 404);
+        }
+
         $reward = $gachaService->openNext($profile);
 
         if (! $reward) {

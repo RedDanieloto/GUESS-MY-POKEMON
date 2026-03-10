@@ -197,6 +197,11 @@ class GachaService
     {
         $all = Pokemon::query()->get(['id', 'slug', 'is_legendary', 'is_mythical', 'base_experience', 'stats']);
 
+        // Safety check: if no Pokemon exist at all
+        if ($all->isEmpty()) {
+            return null;
+        }
+
         $pool = $all->filter(function (Pokemon $pokemon) use ($rarity): bool {
             $total = array_sum((array) ($pokemon->stats ?? []));
 
@@ -210,8 +215,10 @@ class GachaService
             };
         })->values();
 
+        // If specific rarity pool is empty, return a random Pokemon from all Pokemon
         if ($pool->isEmpty()) {
-            return Pokemon::query()->inRandomOrder()->first();
+            $randomPokemon = $all->random();
+            return Pokemon::query()->find($randomPokemon->id);
         }
 
         $picked = $pool->random();
