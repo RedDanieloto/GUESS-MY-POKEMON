@@ -11,6 +11,8 @@ class ProgressionService
      */
     public function award(PlayerProfile $profile, int $baseXp, string $difficulty = 'normal'): array
     {
+        $oldLevel = (int) $profile->level;
+
         $tierMultiplier = match ($profile->experience_tier) {
             'beginner' => 1.25,
             'intermediate' => 1.0,
@@ -29,6 +31,10 @@ class ProgressionService
         $profile->xp += $xpAwarded;
         $profile->level = $this->levelFromXp($profile->xp);
         $profile->save();
+
+        if ((int) $profile->level > $oldLevel) {
+            app(GachaService::class)->grantLevelUpRewards($profile, $oldLevel, (int) $profile->level);
+        }
 
         $nextLevelXp = $this->xpForLevel($profile->level + 1);
         $currentLevelFloor = $this->xpForLevel($profile->level);
@@ -80,6 +86,10 @@ class ProgressionService
             'level' => (int) $profile->level,
             'games_played' => (int) $profile->games_played,
             'wins' => (int) $profile->wins,
+            'questions_asked' => (int) $profile->questions_asked,
+            'questions_answered' => (int) $profile->questions_answered,
+            'guesses_made' => (int) $profile->guesses_made,
+            'correct_guesses' => (int) $profile->correct_guesses,
             'next_level_xp' => $nextLevelXp,
             'level_progress_percent' => max(0, min(100, $progress)),
         ];

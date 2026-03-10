@@ -3,6 +3,7 @@ import './bootstrap';
 const apiBase = '/api';
 const storageKey = 'pwi_player_token';
 const langKey = 'pwi_lang';
+const authTokenKey = 'pwi_auth_token';
 
 const i18n = {
     es: {
@@ -23,6 +24,8 @@ const i18n = {
         mythical: 'Mitico',
         me: 'tu',
         joinNeedName: 'Pon tu nombre para entrar.',
+        guestMode: 'Modo invitado activo.',
+        loggedAs: 'Sesión iniciada como',
         profileSaved: 'Perfil guardado.',
         noProfileYet: 'Aun no creas perfil. Puedes jugar sin login o guardar uno opcional.',
         level: 'Nivel',
@@ -48,6 +51,8 @@ const i18n = {
         mythical: 'Mythical',
         me: 'you',
         joinNeedName: 'Set your name before joining.',
+        guestMode: 'Guest mode active.',
+        loggedAs: 'Signed in as',
         profileSaved: 'Profile saved.',
         noProfileYet: 'No profile yet. You can play as guest or save an optional profile.',
         level: 'Level',
@@ -59,6 +64,8 @@ const i18n = {
 
 const state = {
     playerToken: localStorage.getItem(storageKey) || '',
+    authToken: localStorage.getItem(authTokenKey) || '',
+    authUser: null,
     language: localStorage.getItem(langKey) || 'es',
     localPokemon: null,
     localQuestions: {},
@@ -69,17 +76,39 @@ const state = {
     vsRoom: null,
     profile: null,
     avatarCatalog: {},
+    achievements: null,
+    gacha: null,
 };
 
-const syncBtn = document.getElementById('sync-pokemon-btn');
 const syncStatus = document.getElementById('sync-status');
 const languageSelect = document.getElementById('language-select');
+const authNameInput = document.getElementById('auth-name');
+const authEmailInput = document.getElementById('auth-email');
+const authPasswordInput = document.getElementById('auth-password');
+const authPasswordConfirmInput = document.getElementById('auth-password-confirm');
+const authRegisterBtn = document.getElementById('auth-register-btn');
+const authLoginBtn = document.getElementById('auth-login-btn');
+const authGoogleBtn = document.getElementById('auth-google-btn');
+const authLogoutBtn = document.getElementById('auth-logout-btn');
+const authStatus = document.getElementById('auth-status');
 
 const profileNicknameInput = document.getElementById('profile-nickname');
 const profileTierSelect = document.getElementById('profile-tier');
 const profileAvatarSelect = document.getElementById('profile-avatar');
 const profileSaveBtn = document.getElementById('profile-save-btn');
 const profileHud = document.getElementById('profile-hud');
+const achievementsSummary = document.getElementById('achievements-summary');
+const achievementsGrid = document.getElementById('achievements-grid');
+const gachaSummary = document.getElementById('gacha-summary');
+const gachaOpenBtn = document.getElementById('gacha-open-btn');
+const gachaWheel = document.getElementById('gacha-wheel');
+const gachaResult = document.getElementById('gacha-result');
+const gachaCinematic = document.getElementById('gacha-cinematic');
+const gachaCinematicClose = document.getElementById('gacha-cinematic-close');
+const gachaCinematicWheel = document.getElementById('gacha-cinematic-wheel');
+const gachaCinematicReveal = document.getElementById('gacha-cinematic-reveal');
+const gachaCinematicTitle = document.getElementById('gacha-cinematic-title');
+const gachaCinematicCard = gachaCinematic?.querySelector('.gacha-cinematic-card');
 
 const localSearchInput = document.getElementById('local-search');
 const localSearchBtn = document.getElementById('local-search-btn');
@@ -111,6 +140,23 @@ function t(key) {
     return i18n[state.language][key] || key;
 }
 
+function localPokemonSprite(pokeapiId) {
+    return pokeapiId ? `/sprites/pokemon/${pokeapiId}.png` : '';
+}
+
+function pokemonSpriteUrl(pokemon) {
+    return pokemon?.sprite
+        || pokemon?.sprites?.official_artwork
+        || pokemon?.sprites?.front_default
+        || localPokemonSprite(pokemon?.pokeapi_id)
+        || '';
+}
+
+function pokeballSpriteUrl() {
+    return (state.gacha?.ball_catalog && state.gacha.ball_catalog['poke-ball'])
+        || '/sprites/items/poke-ball.png';
+}
+
 function debounce(fn, wait = 280) {
     let timer = null;
     return (...args) => {
@@ -119,6 +165,21 @@ function debounce(fn, wait = 280) {
         }
         timer = setTimeout(() => fn(...args), wait);
     };
+}
+
+function isUserTyping() {
+    const active = document.activeElement;
+    if (!active) {
+        return false;
+    }
+
+    const tag = active.tagName;
+    return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        active.isContentEditable
+    );
 }
 
 async function api(path, options = {}) {
@@ -130,6 +191,10 @@ async function api(path, options = {}) {
             Accept: 'application/json',
         },
     };
+
+    if (options.auth && state.authToken) {
+        config.headers.Authorization = `Bearer ${state.authToken}`;
+    }
 
     if (options.data) {
         config.body = JSON.stringify(options.data);
@@ -152,6 +217,137 @@ function setPlayerToken(token) {
 
     state.playerToken = token;
     localStorage.setItem(storageKey, token);
+    updateGoogleAuthLink();
+}
+
+function setAuthToken(token) {
+    state.authToken = token || '';
+    if (state.authToken) {
+        localStorage.setItem(authTokenKey, state.authToken);
+    } else {
+        localStorage.removeItem(authTokenKey);
+    }
+}
+
+function updateGoogleAuthLink() {
+    const params = new URLSearchParams();
+    if (state.playerToken) {
+        params.set('player_token', state.playerToken);
+    }
+    authGoogleBtn.href = `/auth/google/redirect${params.toString() ? `?${params.toString()}` : ''}`;
+}
+
+function renderAuthStatus() {
+    if (!state.authUser) {
+        authStatus.textContent = t('guestMode');
+        authLogoutBtn.classList.add('hidden');
+        return;
+    }
+
+    authStatus.textContent = `${t('loggedAs')}: ${state.authUser.name} (${state.authUser.email})`;
+    authLogoutBtn.classList.remove('hidden');
+}
+
+async function loadAuthMe() {
+    if (!state.authToken) {
+        state.authUser = null;
+        renderAuthStatus();
+        return;
+    }
+
+    try {
+        const payload = await api('/auth/me', { auth: true });
+        state.authUser = payload.user || null;
+        renderAuthStatus();
+    } catch (error) {
+        setAuthToken('');
+        state.authUser = null;
+        renderAuthStatus();
+    }
+}
+
+async function registerAuth() {
+    const payload = await api('/auth/register', {
+        method: 'POST',
+        data: {
+            name: authNameInput.value,
+            email: authEmailInput.value,
+            password: authPasswordInput.value,
+            password_confirmation: authPasswordConfirmInput.value,
+            player_token: state.playerToken || null,
+        },
+    });
+
+    setAuthToken(payload.auth_token);
+    state.authUser = payload.user;
+    renderAuthStatus();
+
+    if (!profileNicknameInput.value && payload.user?.name) {
+        profileNicknameInput.value = payload.user.name;
+    }
+}
+
+async function loginAuth() {
+    const payload = await api('/auth/login', {
+        method: 'POST',
+        data: {
+            email: authEmailInput.value,
+            password: authPasswordInput.value,
+            player_token: state.playerToken || null,
+        },
+    });
+
+    setAuthToken(payload.auth_token);
+    state.authUser = payload.user;
+    renderAuthStatus();
+
+    if (!profileNicknameInput.value && payload.user?.name) {
+        profileNicknameInput.value = payload.user.name;
+    }
+}
+
+async function logoutAuth() {
+    try {
+        await api('/auth/logout', { method: 'POST', auth: true });
+    } catch (error) {
+        // noop
+    }
+
+    setAuthToken('');
+    state.authUser = null;
+    state.achievements = null;
+    state.gacha = null;
+    renderAuthStatus();
+    renderAchievements();
+    renderGacha();
+}
+
+function consumeAuthFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('auth_token');
+    const authName = params.get('auth_name');
+    const authEmail = params.get('auth_email');
+
+    if (!token) {
+        return;
+    }
+
+    setAuthToken(token);
+    state.authUser = {
+        name: authName || 'Trainer',
+        email: authEmail || '',
+    };
+    renderAuthStatus();
+
+    if (!profileNicknameInput.value && authName) {
+        profileNicknameInput.value = authName;
+    }
+
+    params.delete('auth_token');
+    params.delete('auth_name');
+    params.delete('auth_email');
+    const cleanUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+    window.history.replaceState({}, document.title, cleanUrl);
 }
 
 function setLanguage(lang) {
@@ -183,6 +379,8 @@ function renderProfileHud() {
     }
 
     const avatar = state.avatarCatalog[state.profile.avatar_key] || '';
+    const tier = state.achievements?.summary?.tier_name || 'Bronce';
+    const tierCode = state.achievements?.summary?.tier_code || 'bronze';
     profileHud.innerHTML = `
         <div class="profile-hud-row">
             <img class="profile-avatar" src="${avatar}" alt="avatar">
@@ -190,6 +388,7 @@ function renderProfileHud() {
                 <strong>${state.profile.nickname || 'Trainer'}</strong>
                 <div class="muted">${t('level')} ${state.profile.level} · ${state.profile.experience_tier}</div>
                 <div class="muted">${t('wins')}: ${state.profile.wins} · ${t('games')}: ${state.profile.games_played}</div>
+                <span class="tier-pill tier-${tierCode}">Tier ${tier}</span>
             </div>
         </div>
         <div class="xp-wrap">
@@ -197,6 +396,315 @@ function renderProfileHud() {
             <div class="xp-track"><div class="xp-fill" style="width:${state.profile.level_progress_percent}%"></div></div>
         </div>
     `;
+}
+
+function renderAchievements() {
+    const achievements = state.achievements;
+    if (!achievements) {
+        achievementsSummary.textContent = 'Crea/guarda tu perfil para empezar a desbloquear logros.';
+        achievementsGrid.innerHTML = '';
+        return;
+    }
+
+    achievementsSummary.innerHTML = `Logros desbloqueados: ${achievements.summary.unlocked}/${achievements.summary.total} (${achievements.summary.completion_percent}%) · <span class="tier-pill tier-${achievements.summary.tier_code}">Tier ${achievements.summary.tier_name}</span>`;
+
+    achievementsGrid.innerHTML = achievements.items.map((item) => {
+        const unlocked = item.is_unlocked;
+        const reward = item.reward;
+        const icon = reward?.sprite || pokeballSpriteUrl();
+        const progress = Math.max(0, Math.min(100, item.progress_percent || 0));
+
+        return `
+            <article class="achievement-card ${unlocked ? '' : 'locked'}">
+                <div class="achievement-icon">
+                    <img src="${icon}" alt="${item.title}">
+                </div>
+                <div>
+                    <strong>${item.title}</strong>
+                    <div class="muted">${item.description}</div>
+                    <div class="muted">${item.current}/${item.target} · ${unlocked ? 'Completado' : 'En progreso'}</div>
+                    <div class="progress-mini"><span style="width:${progress}%"></span></div>
+                    ${reward ? `<div class="pill">Recompensa: #${reward.pokeapi_id} ${reward.display_name}</div>` : ''}
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+async function loadAchievements() {
+    if (!state.playerToken) {
+        state.achievements = null;
+        renderAchievements();
+        return;
+    }
+
+    const payload = await api(`/achievements?player_token=${encodeURIComponent(state.playerToken)}`);
+    state.achievements = payload.achievements;
+    renderAchievements();
+    if (state.profile) {
+        renderProfileHud();
+    }
+}
+
+function rarityLabel(rarity) {
+    const map = {
+        normal: 'Normal',
+        rare: 'Raro',
+        special: 'Especial',
+        ultra: 'Ultra',
+        mythic: 'Mítico',
+        legendary: 'Legendario',
+    };
+
+    return map[rarity] || rarity;
+}
+
+function renderGacha() {
+    const gacha = state.gacha;
+    if (!gacha) {
+        gachaSummary.textContent = 'Cápsulas pendientes: 0';
+        gachaOpenBtn.disabled = true;
+        gachaWheel.innerHTML = '<div class=\"muted\">Sin cápsulas todavía.</div>';
+        gachaResult.textContent = 'Sin apertura todavía.';
+        return;
+    }
+
+    gachaSummary.textContent = `Cápsulas pendientes: ${gacha.pending_count}`;
+    gachaOpenBtn.disabled = gacha.pending_count < 1;
+
+    const slots = [
+        'poke-ball',
+        'poke-ball',
+        'great-ball',
+        'ultra-ball',
+        'poke-ball',
+        'cherish-ball',
+        'master-ball',
+    ];
+    const ballCatalog = gacha.ball_catalog || {};
+    gachaWheel.innerHTML = `<div class=\"gacha-track\">${slots.map((ball, idx) => `<div class=\"gacha-slot ${idx === 3 ? 'active' : ''}\"><img src=\"${ballCatalog[ball] || ballCatalog['poke-ball'] || ''}\" alt=\"${ball}\"></div>`).join('')}</div>`;
+}
+
+async function loadGacha() {
+    if (!state.playerToken) {
+        state.gacha = null;
+        renderGacha();
+        return;
+    }
+
+    const payload = await api(`/gacha?player_token=${encodeURIComponent(state.playerToken)}`);
+    state.gacha = payload.gacha;
+    renderGacha();
+}
+
+function closeGachaCinematic() {
+    gachaCinematic.classList.add('hidden');
+    gachaCinematicReveal.innerHTML = '';
+    if (gachaCinematicCard) {
+        gachaCinematicCard.classList.remove('theme-normal', 'theme-rare', 'theme-special', 'theme-ultra', 'theme-mythic', 'theme-legendary', 'cinematic-shake');
+        gachaCinematicCard.querySelector('.gacha-spark-burst')?.remove();
+    }
+}
+
+function openGachaCinematic() {
+    gachaCinematic.classList.remove('hidden');
+    gachaCinematicReveal.innerHTML = '<div class="muted">Preparando cápsula...</div>';
+}
+
+function gachaThemeClass(rarity) {
+    const map = {
+        normal: 'theme-normal',
+        rare: 'theme-rare',
+        special: 'theme-special',
+        ultra: 'theme-ultra',
+        mythic: 'theme-mythic',
+        legendary: 'theme-legendary',
+    };
+
+    return map[rarity] || 'theme-normal';
+}
+
+function playGachaTone(rarity) {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) {
+            return;
+        }
+
+        const ctx = new AudioCtx();
+        const sequence = {
+            normal: [330, 392],
+            rare: [392, 494, 523],
+            special: [440, 523, 659],
+            ultra: [494, 659, 784],
+            mythic: [523, 659, 784, 988],
+            legendary: [440, 659, 880, 1175],
+        }[rarity] || [330, 392];
+
+        const start = ctx.currentTime;
+        sequence.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+            gain.gain.value = 0.0001;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            const t = start + i * 0.08;
+            gain.gain.exponentialRampToValueAtTime(0.055, t + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+            osc.start(t);
+            osc.stop(t + 0.1);
+        });
+    } catch (error) {
+        // no-op
+    }
+}
+
+function vibrateByRarity(rarity) {
+    if (!navigator.vibrate) {
+        return;
+    }
+
+    const pattern = {
+        normal: [30],
+        rare: [40, 20, 40],
+        special: [55, 25, 55],
+        ultra: [65, 30, 65, 25, 45],
+        mythic: [75, 30, 75, 30, 75],
+        legendary: [90, 35, 90, 35, 90],
+    }[rarity] || [30];
+
+    navigator.vibrate(pattern);
+}
+
+function sparkColorByRarity(rarity) {
+    return {
+        normal: '#cbd5e1',
+        rare: '#60a5fa',
+        special: '#818cf8',
+        ultra: '#fbbf24',
+        mythic: '#e879f9',
+        legendary: '#f87171',
+    }[rarity] || '#cbd5e1';
+}
+
+function spawnGachaBurst(rarity) {
+    if (!gachaCinematicCard) {
+        return;
+    }
+
+    const burst = document.createElement('div');
+    burst.className = 'gacha-spark-burst';
+    const color = sparkColorByRarity(rarity);
+
+    for (let i = 0; i < 22; i++) {
+        const spark = document.createElement('span');
+        spark.className = 'gacha-spark';
+        const angle = (Math.PI * 2 * i) / 22;
+        const distance = 55 + Math.random() * 120;
+        spark.style.setProperty('--sx', `${Math.cos(angle) * distance}px`);
+        spark.style.setProperty('--sy', `${Math.sin(angle) * distance}px`);
+        spark.style.left = `${48 + (Math.random() * 8 - 4)}%`;
+        spark.style.top = `${46 + (Math.random() * 8 - 4)}%`;
+        spark.style.background = color;
+        spark.style.animationDelay = `${Math.random() * 90}ms`;
+        burst.appendChild(spark);
+    }
+
+    gachaCinematicCard.appendChild(burst);
+    setTimeout(() => burst.remove(), 1100);
+}
+
+async function animateGachaOpen(reward) {
+    const gacha = state.gacha || {};
+    const ballCatalog = gacha.ball_catalog || {};
+    const pool = Object.values(ballCatalog);
+    if (!pool.length) {
+        return;
+    }
+
+    openGachaCinematic();
+    gachaCinematicTitle.textContent = reward.source === 'tier_up'
+        ? '¡Cápsula de Tier! Premio Garantizado'
+        : '¡Cápsula de Nivel!';
+
+    const slots = Array.from({ length: 7 }, (_, idx) => `
+        <div class=\"gacha-slot ${idx === 3 ? 'active' : ''}\">
+            <img src=\"${pool[Math.floor(Math.random() * pool.length)]}\" alt=\"ball\">
+        </div>
+    `).join('');
+    gachaCinematicWheel.innerHTML = `<div class=\"gacha-track\">${slots}</div>`;
+
+    const center = () => gachaCinematicWheel.querySelectorAll('.gacha-slot img')[3];
+
+    for (let i = 0; i < 24; i++) {
+        const delay = i < 12 ? 52 : (i < 19 ? 92 : 140);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        const img = center();
+        if (img) {
+            img.src = pool[Math.floor(Math.random() * pool.length)];
+        }
+    }
+
+    const finalImg = center();
+    if (finalImg) {
+        finalImg.src = reward.ball_sprite;
+    }
+
+    if (gachaCinematicCard) {
+        gachaCinematicCard.classList.remove('theme-normal', 'theme-rare', 'theme-special', 'theme-ultra', 'theme-mythic', 'theme-legendary');
+        gachaCinematicCard.classList.add(gachaThemeClass(reward.rarity), 'cinematic-shake');
+        setTimeout(() => gachaCinematicCard.classList.remove('cinematic-shake'), 460);
+    }
+    spawnGachaBurst(reward.rarity);
+    playGachaTone(reward.rarity);
+    vibrateByRarity(reward.rarity);
+
+    gachaCinematicReveal.innerHTML = `
+        <strong>¡Te salió #${reward.pokemon.pokeapi_id} ${reward.pokemon.display_name}!</strong>
+        <span class=\"rarity-pill rarity-${reward.rarity}\">${rarityLabel(reward.rarity)}</span>
+        <div class=\"muted\">Ball: ${reward.ball_type} · Fuente: ${reward.source === 'tier_up' ? 'Tier Up' : 'Subida de nivel'}</div>
+        <div class=\"pokemon-card\" style=\"margin-top:.45rem;\">
+            <img src=\"${reward.pokemon?.sprite || pokemonSpriteUrl(reward.pokemon)}\" alt=\"${reward.pokemon.display_name}\">
+            <div>
+                <strong>#${reward.pokemon.pokeapi_id} ${reward.pokemon.display_name}</strong>
+                <div class=\"muted\">${reward.pokemon.primary_type || ''}${reward.pokemon.secondary_type ? ` / ${reward.pokemon.secondary_type}` : ''}</div>
+            </div>
+        </div>
+    `;
+
+    gachaResult.innerHTML = `
+        <strong>¡Te salió #${reward.pokemon.pokeapi_id} ${reward.pokemon.display_name}!</strong>
+        <span class=\"rarity-pill rarity-${reward.rarity}\">${rarityLabel(reward.rarity)}</span>
+    `;
+}
+
+async function openGacha() {
+    if (!state.playerToken) {
+        return;
+    }
+
+    gachaOpenBtn.disabled = true;
+    try {
+        const payload = await api('/gacha/open', {
+            method: 'POST',
+            data: {
+                player_token: state.playerToken,
+            },
+        });
+
+        await animateGachaOpen(payload.reward);
+        state.gacha = payload.gacha;
+        renderGacha();
+        await loadAchievements();
+    } catch (error) {
+        gachaResult.textContent = error.message;
+    } finally {
+        if ((state.gacha?.pending_count || 0) > 0) {
+            gachaOpenBtn.disabled = false;
+        }
+    }
 }
 
 async function saveProfile() {
@@ -215,6 +723,8 @@ async function saveProfile() {
     state.avatarCatalog = response.avatar_catalog || {};
     renderAvatarOptions();
     renderProfileHud();
+    await loadAchievements();
+    await loadGacha();
     syncStatus.textContent = t('profileSaved');
 }
 
@@ -235,10 +745,12 @@ async function loadProfile() {
     }
 
     renderProfileHud();
+    await loadAchievements();
+    await loadGacha();
 }
 
 function pokemonCardHtml(pokemon) {
-    const sprite = pokemon?.sprites?.official_artwork || pokemon?.sprites?.front_default || '';
+    const sprite = pokemonSpriteUrl(pokemon);
     return `
         <img src="${sprite}" alt="${pokemon.display_name}">
         <div>
@@ -254,31 +766,11 @@ function pokemonCardHtml(pokemon) {
 }
 
 function searchResultButtonHtml(pokemon, action, textPrefix = '') {
-    const sprite = pokemon?.sprites?.front_default || pokemon?.sprites?.official_artwork || '';
+    const sprite = pokemonSpriteUrl(pokemon);
     return `<button type="button" class="search-item" data-action="${action}" data-pokemon-id="${pokemon.id}">
         <img src="${sprite}" alt="${pokemon.display_name}">
         <span>${textPrefix}#${pokemon.pokeapi_id} ${pokemon.display_name}</span>
     </button>`;
-}
-
-async function syncPokemon() {
-    syncBtn.disabled = true;
-    syncStatus.textContent = t('syncing');
-
-    try {
-        const result = await api('/pokemon/sync', {
-            method: 'POST',
-            data: { limit: 151, offset: 0 },
-        });
-
-        const summary = result.summary || {};
-        syncStatus.textContent = `Listo: +${summary.created || 0} nuevos, ${summary.updated || 0} actualizados. Total: ${result.total_loaded}`;
-    } catch (error) {
-        syncStatus.textContent = error.message;
-    } finally {
-        syncBtn.disabled = false;
-        await loadQuestionCatalog();
-    }
 }
 
 async function loadQuestionCatalog() {
@@ -593,6 +1085,8 @@ async function loadRoom(mode, code) {
     }
 
     await renderRoom(mode, data.room);
+    await loadAchievements();
+    await loadGacha();
 }
 
 async function createRoom(mode, nickname, difficulty, extra = {}) {
@@ -642,7 +1136,7 @@ async function loadPublicRooms(mode) {
 
     listElement.innerHTML = rooms.map((room) => `
         <button type="button" class="search-item" data-action="join-public" data-mode="${mode}" data-code="${room.code}" ${room.is_joinable ? '' : 'disabled'}>
-            <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png" alt="room">
+            <img src="${pokeballSpriteUrl()}" alt="room">
             <span>${room.room_name || 'Sala sin nombre'} · ${room.code} · ${room.players_count}/2 · ${room.difficulty} · ${room.language.toUpperCase()}</span>
         </button>
     `).join('');
@@ -672,7 +1166,37 @@ async function loadAllPublicRooms() {
     await Promise.all([loadPublicRooms('online'), loadPublicRooms('vs')]);
 }
 
-syncBtn.addEventListener('click', syncPokemon);
+authRegisterBtn.addEventListener('click', async () => {
+    try {
+        await registerAuth();
+    } catch (error) {
+        alert(error.message);
+    }
+});
+authLoginBtn.addEventListener('click', async () => {
+    try {
+        await loginAuth();
+    } catch (error) {
+        alert(error.message);
+    }
+});
+authLogoutBtn.addEventListener('click', async () => {
+    await logoutAuth();
+});
+gachaCinematicClose.addEventListener('click', closeGachaCinematic);
+gachaCinematic.addEventListener('click', (event) => {
+    if (event.target === gachaCinematic) {
+        closeGachaCinematic();
+    }
+});
+window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !gachaCinematic.classList.contains('hidden')) {
+        closeGachaCinematic();
+    }
+});
+gachaOpenBtn.addEventListener('click', async () => {
+    await openGacha();
+});
 profileSaveBtn.addEventListener('click', async () => {
     try {
         await saveProfile();
@@ -763,6 +1287,10 @@ vsJoinBtn.addEventListener('click', async () => {
 
 setInterval(async () => {
     try {
+        if (isUserTyping()) {
+            return;
+        }
+
         if (state.onlineRoomCode) {
             await loadRoom('online', state.onlineRoomCode);
         }
@@ -777,6 +1305,10 @@ setInterval(async () => {
 
 setInterval(async () => {
     try {
+        if (isUserTyping()) {
+            return;
+        }
+
         await loadAllPublicRooms();
     } catch (error) {
         // polling silencioso
@@ -785,10 +1317,14 @@ setInterval(async () => {
 
 (async function init() {
     setLanguage(state.language);
+    updateGoogleAuthLink();
+    consumeAuthFromUrl();
 
     try {
+        await loadAuthMe();
         await loadQuestionCatalog();
         await loadProfile();
+        await loadGacha();
         await loadAllPublicRooms();
         const pokemon = await api('/pokemon?limit=1');
         syncStatus.textContent = `${t('loaded')}: ${pokemon.total_loaded}`;

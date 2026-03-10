@@ -20,8 +20,7 @@
                 <h1>Pokemon Who Is</h1>
                 <p class="subtitle">Modo fiesta para jugar en cel con amigos. Online por codigo, local y VS.</p>
                 <div class="sync-row">
-                    <button id="sync-pokemon-btn" class="btn btn-warm">Sincronizar PokeAPI</button>
-                    <span id="sync-status" class="muted">Sin datos aun</span>
+                    <span id="sync-status" class="muted">Pokedex cargada desde servidor.</span>
                 </div>
                 <div class="sync-row">
                     <select id="language-select" class="input language-select">
@@ -31,6 +30,19 @@
                 </div>
                 <div class="trainer-login">
                     <h3>Entrenador (opcional)</h3>
+                    <div class="auth-box">
+                        <input id="auth-name" class="input" type="text" placeholder="Nombre (registro)">
+                        <input id="auth-email" class="input" type="email" placeholder="Email">
+                        <input id="auth-password" class="input" type="password" placeholder="Contraseña">
+                        <input id="auth-password-confirm" class="input" type="password" placeholder="Confirmar contraseña (registro)">
+                        <div class="inline-grid">
+                            <button id="auth-register-btn" class="btn" type="button">Registrarme</button>
+                            <button id="auth-login-btn" class="btn" type="button">Entrar</button>
+                        </div>
+                        <a id="auth-google-btn" class="btn btn-warm" href="/auth/google/redirect">Entrar con Google</a>
+                        <button id="auth-logout-btn" class="btn hidden" type="button">Cerrar sesión</button>
+                        <div id="auth-status" class="muted">Modo invitado activo.</div>
+                    </div>
                     <input id="profile-nickname" class="input" type="text" placeholder="Tu nombre de entrenador">
                     <div class="inline-grid">
                         <select id="profile-tier" class="input">
@@ -62,6 +74,7 @@
             <button class="tab-btn active" data-mode="local" type="button">Local</button>
             <button class="tab-btn" data-mode="online" type="button">Online</button>
             <button class="tab-btn" data-mode="vs" type="button">VS</button>
+            <button class="tab-btn" data-mode="user" type="button">Usuario</button>
         </nav>
 
         <main>
@@ -147,7 +160,38 @@
                 </div>
                 <div id="vs-state" class="room-state hidden"></div>
             </section>
+
+            <section class="panel mode-panel" id="mode-user">
+                <h2>Vista de Usuario y Logros</h2>
+                <p class="muted">
+                    Explicación simple: juega partidas, pregunta, responde y adivina Pokémon. Cada reto completado te da un trofeo
+                    y desbloquea un Pokémon sorpresa como recompensa de tu colección.
+                </p>
+                <div class="sub-panel" style="margin-top:.75rem;">
+                    <h3>Gachapón de Niveles y Tiers</h3>
+                    <p class="muted">
+                        Cada nivel te da una cápsula aleatoria. Si subes de tier, recibes cápsula especial con garantía mítica o legendaria.
+                    </p>
+                    <div id="gacha-summary" class="answer-badge">Cápsulas pendientes: 0</div>
+                    <button id="gacha-open-btn" class="btn btn-warm" type="button">Abrir cápsula</button>
+                    <div id="gacha-wheel" class="gacha-wheel"></div>
+                    <div id="gacha-result" class="muted">Sin apertura todavía.</div>
+                </div>
+                <div id="achievements-summary" class="answer-badge">Sin progreso todavía.</div>
+                <div id="achievements-grid" class="achievements-grid"></div>
+            </section>
         </main>
+    </div>
+
+    <div id="gacha-cinematic" class="gacha-cinematic hidden">
+        <div class="gacha-cinematic-card">
+            <div class="gacha-cinematic-top">
+                <h2 id="gacha-cinematic-title">¡Apertura Gachapón!</h2>
+                <button id="gacha-cinematic-close" class="btn" type="button">Cerrar</button>
+            </div>
+            <div class="gacha-cinematic-wheel" id="gacha-cinematic-wheel"></div>
+            <div class="gacha-cinematic-reveal" id="gacha-cinematic-reveal"></div>
+        </div>
     </div>
 </body>
 </html>

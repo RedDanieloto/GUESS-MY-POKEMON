@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PlayerProfile;
 use App\Services\ProgressionService;
+use App\Services\SpriteService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -84,11 +85,11 @@ class ProfileController extends Controller
     public static function avatarCatalog(): array
     {
         return [
-            'trainer-a' => 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png',
-            'trainer-b' => 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png',
-            'trainer-c' => 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/94.png',
-            'trainer-d' => 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/131.png',
-            'trainer-e' => 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png',
+            'trainer-a' => SpriteService::pokemonSpriteUrl(25, 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'),
+            'trainer-b' => SpriteService::pokemonSpriteUrl(6, 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png'),
+            'trainer-c' => SpriteService::pokemonSpriteUrl(94, 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/94.png'),
+            'trainer-d' => SpriteService::pokemonSpriteUrl(131, 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/131.png'),
+            'trainer-e' => SpriteService::pokemonSpriteUrl(150, 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png'),
         ];
     }
 }

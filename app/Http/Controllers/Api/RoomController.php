@@ -8,6 +8,7 @@ use App\Models\PlayerProfile;
 use App\Models\Pokemon;
 use App\Models\RoomPlayer;
 use App\Models\RoomQuestion;
+use App\Services\AchievementService;
 use App\Services\ProgressionService;
 use App\Services\QuestionCatalog;
 use App\Services\QuestionEvaluator;
@@ -258,6 +259,7 @@ class RoomController extends Controller
             'question_text' => $text,
             'meta' => ['kind' => 'question'],
         ]);
+        $this->incrementProfileStat($player->session_id, 'questions_asked', 1);
         $this->awardExperience($player->session_id, $room, 8);
 
         return response()->json([
@@ -292,6 +294,7 @@ class RoomController extends Controller
         $question->answer = $validated['answer'];
         $question->answered_at = now();
         $question->save();
+        $this->incrementProfileStat($player->session_id, 'questions_answered', 1);
         $this->awardExperience($player->session_id, $room, 6);
 
         if ($room->mode === 'vs' && $room->status === 'active') {
@@ -342,8 +345,10 @@ class RoomController extends Controller
                 'correct' => $correct,
             ],
         ]);
+        $this->incrementProfileStat($player->session_id, 'guesses_made', 1);
 
         if ($correct) {
+            $this->incrementProfileStat($player->session_id, 'correct_guesses', 1);
             $room->status = 'finished';
             $room->winner_session_id = $player->session_id;
             $room->save();
@@ -543,6 +548,7 @@ class RoomController extends Controller
     {
         $profile = $this->ensureProfile($sessionId);
         app(ProgressionService::class)->award($profile, $baseXp, (string) $room->difficulty);
+        app(AchievementService::class)->syncUnlocks($profile);
     }
 
     private function finalizeRoomExperience(GameRoom $room, string $winnerSessionId): void
@@ -557,12 +563,14 @@ class RoomController extends Controller
                 $profile->wins += 1;
             }
             $profile->save();
+            app(AchievementService::class)->syncUnlocks($profile);
             $profiles[] = $profile;
         }
 
         foreach ($profiles as $profile) {
             $isWinner = $profile->session_id === $winnerSessionId;
             app(ProgressionService::class)->award($profile, $isWinner ? 120 : 55, (string) $room->difficulty);
+            app(AchievementService::class)->syncUnlocks($profile);
         }
     }
 
@@ -578,5 +586,18 @@ class RoomController extends Controller
             ...$progression,
             'avatar_key' => $profile->meta['avatar_key'] ?? 'trainer-a',
         ];
+    }
+
+    private function incrementProfileStat(string $sessionId, string $field, int $amount = 1): void
+    {
+        $allowed = ['questions_asked', 'questions_answered', 'guesses_made', 'correct_guesses'];
+        if (! in_array($field, $allowed, true)) {
+            return;
+        }
+
+        $profile = $this->ensureProfile($sessionId);
+        $profile->{$field} = (int) ($profile->{$field} ?? 0) + $amount;
+        $profile->save();
+        app(AchievementService::class)->syncUnlocks($profile);
     }
 }
