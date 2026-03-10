@@ -46,7 +46,9 @@ class PokeApiService
             }
 
             $species = $speciesResponse->json();
-            $generation = (int) Str::of($species['generation']['name'] ?? 'generation-0')->after('generation-')->value();
+            $generation = self::romanToInt(
+                (string) Str::of($species['generation']['name'] ?? '')->after('generation-')->value()
+            );
 
             $types = Arr::pluck($pokemonData['types'] ?? [], 'type.name');
             $abilities = Arr::pluck($pokemonData['abilities'] ?? [], 'ability.name');
@@ -104,5 +106,26 @@ class PokeApiService
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private static function romanToInt(string $roman): int
+    {
+        $map = ['i' => 1, 'v' => 5, 'x' => 10, 'l' => 50, 'c' => 100];
+        $roman = strtolower(trim($roman));
+
+        if ($roman === '') {
+            return 0;
+        }
+
+        $total = 0;
+        $prev = 0;
+
+        for ($i = strlen($roman) - 1; $i >= 0; $i--) {
+            $value = $map[$roman[$i]] ?? 0;
+            $total += $value < $prev ? -$value : $value;
+            $prev = $value;
+        }
+
+        return $total;
     }
 }

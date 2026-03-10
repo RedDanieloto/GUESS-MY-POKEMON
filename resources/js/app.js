@@ -4,6 +4,8 @@ const apiBase = '/api';
 const storageKey = 'pwi_player_token';
 const langKey = 'pwi_lang';
 const authTokenKey = 'pwi_auth_token';
+const onlineRoomKey = 'pwi_online_room';
+const vsRoomKey = 'pwi_vs_room';
 
 const i18n = {
     es: {
@@ -76,9 +78,9 @@ const state = {
     localPokemon: null,
     localQuestions: {},
     typeLabels: {},
-    onlineRoomCode: '',
+    onlineRoomCode: localStorage.getItem(onlineRoomKey) || '',
     onlineRoom: null,
-    vsRoomCode: '',
+    vsRoomCode: localStorage.getItem(vsRoomKey) || '',
     vsRoom: null,
     profile: null,
     avatarCatalog: {},
@@ -97,6 +99,13 @@ const authLoginBtn = document.getElementById('auth-login-btn');
 const authGoogleBtn = document.getElementById('auth-google-btn');
 const authLogoutBtn = document.getElementById('auth-logout-btn');
 const authStatus = document.getElementById('auth-status');
+const authSection = document.getElementById('auth-section');
+const authNameField = document.getElementById('auth-name-field');
+const authPasswordConfirmField = document.getElementById('auth-password-confirm-field');
+const authLoginToggleText = document.getElementById('auth-login-toggle-text');
+const authRegisterToggleText = document.getElementById('auth-register-toggle-text');
+const authToggleRegisterBtn = document.getElementById('auth-toggle-register');
+const authToggleLoginBtn = document.getElementById('auth-toggle-login');
 const authFields = [
     authNameInput,
     authEmailInput,
@@ -107,6 +116,17 @@ const authFields = [
     authGoogleBtn,
 ].filter(Boolean);
 
+const profileCard = document.getElementById('profile-card');
+const profileCardName = document.getElementById('profile-card-name');
+const profileCardTier = document.getElementById('profile-card-tier');
+const profileCardLevel = document.getElementById('profile-card-level');
+const profileCardWins = document.getElementById('profile-card-wins');
+const profileCardGames = document.getElementById('profile-card-games');
+const profileCardXp = document.getElementById('profile-card-xp');
+const profileCardAvatar = document.getElementById('profile-card-avatar');
+const profileEditBtn = document.getElementById('profile-edit-btn');
+const profileEditSection = document.getElementById('profile-edit-section');
+const profileCancelBtn = document.getElementById('profile-cancel-btn');
 const profileNicknameInput = document.getElementById('profile-nickname');
 const profileTierSelect = document.getElementById('profile-tier');
 const profileAvatarSelect = document.getElementById('profile-avatar');
@@ -207,9 +227,8 @@ async function api(path, options = {}) {
         },
     };
 
-    if (options.auth && state.authToken) {
+    if (state.authToken) {
         config.headers.Authorization = `Bearer ${state.authToken}`;
-        config.headers['X-Auth-Token'] = state.authToken;
     }
 
     if (options.data) {
@@ -258,12 +277,23 @@ function renderAuthStatus() {
         authStatus.textContent = t('guestMode');
         authLogoutBtn.classList.add('hidden');
         authFields.forEach((element) => element.classList.remove('hidden'));
+        // Show auth-or divider and google btn
+        const authOr = document.querySelector('.auth-or');
+        if (authOr) authOr.style.display = '';
+        authGoogleBtn?.classList.remove('hidden');
+        // Show toggle text
+        authLoginToggleText?.classList.remove('hidden');
         return;
     }
 
     authStatus.textContent = `${t('loggedAs')}: ${state.authUser.name} (${state.authUser.email})`;
     authLogoutBtn.classList.remove('hidden');
     authFields.forEach((element) => element.classList.add('hidden'));
+    // Hide divider and toggle when logged in
+    const authOr = document.querySelector('.auth-or');
+    if (authOr) authOr.style.display = 'none';
+    authLoginToggleText?.classList.add('hidden');
+    authRegisterToggleText?.classList.add('hidden');
 }
 
 async function loadAuthMe() {
@@ -299,10 +329,8 @@ async function registerAuth() {
     setAuthToken(payload.auth_token);
     state.authUser = payload.user;
     renderAuthStatus();
-
-    if (!profileNicknameInput.value && payload.user?.name) {
-        profileNicknameInput.value = payload.user.name;
-    }
+    await loadProfile();
+    renderProfileHud();
 }
 
 async function loginAuth() {
@@ -318,10 +346,8 @@ async function loginAuth() {
     setAuthToken(payload.auth_token);
     state.authUser = payload.user;
     renderAuthStatus();
-
-    if (!profileNicknameInput.value && payload.user?.name) {
-        profileNicknameInput.value = payload.user.name;
-    }
+    await loadProfile();
+    renderProfileHud();
 }
 
 async function logoutAuth() {
@@ -406,7 +432,19 @@ function renderAvatarOptions() {
     }
 }
 
+function autoFillNicknames() {
+    const nickname = state.profile?.nickname || state.authUser?.name
+        || `Invitado-${Math.floor(Math.random() * 9000000000 + 1000000000)}`;
+    ['online-nickname', 'vs-nickname', 'online-join-nickname', 'vs-join-nickname'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.value) {
+            el.value = nickname;
+        }
+    });
+}
+
 function renderProfileHud() {
+    autoFillNicknames();
     if (!state.profile) {
         profileHud.textContent = t('noProfileYet');
         return;
@@ -430,6 +468,36 @@ function renderProfileHud() {
             <div class="xp-track"><div class="xp-fill" style="width:${state.profile.level_progress_percent}%"></div></div>
         </div>
     `;
+    
+    // Update profile card
+    updateProfileCard();
+}
+
+function updateProfileCard() {
+    if (!state.profile) {
+        profileCard?.classList.add('hidden');
+        authSection?.classList.remove('hidden');
+        profileEditSection?.classList.add('hidden');
+        return;
+    }
+
+    const avatar = state.avatarCatalog[state.profile.avatar_key] || '';
+    const tier = state.achievements?.summary?.tier_name || 'Principiante';
+    
+    // Update card display
+    profileCardName.textContent = state.profile.nickname || 'Trainer';
+    profileCardTier.textContent = `Tier ${tier}`;
+    profileCardLevel.textContent = state.profile.level || '1';
+    profileCardWins.textContent = state.profile.wins || '0';
+    profileCardGames.textContent = state.profile.games_played || '0';
+    profileCardXp.textContent = state.profile.xp || '0';
+    profileCardAvatar.src = avatar;
+    profileCardAvatar.alt = state.profile.nickname || 'Trainer';
+    
+    // Show card, hide auth section
+    profileCard?.classList.remove('hidden');
+    authSection?.classList.add('hidden');
+    profileEditSection?.classList.add('hidden');
 }
 
 function renderAchievements() {
@@ -532,7 +600,12 @@ async function loadGacha() {
 }
 
 function closeGachaCinematic() {
+    if (!gachaCinematic) {
+        console.warn('gachaCinematic element not available');
+        return;
+    }
     gachaCinematic.classList.add('hidden');
+    gachaCinematic.style.display = 'none';
     gachaCinematicReveal.innerHTML = '';
     if (gachaCinematicCard) {
         gachaCinematicCard.classList.remove('theme-normal', 'theme-rare', 'theme-special', 'theme-ultra', 'theme-mythic', 'theme-legendary', 'cinematic-shake');
@@ -541,7 +614,11 @@ function closeGachaCinematic() {
 }
 
 function openGachaCinematic() {
+    if (!gachaCinematic || !state.playerToken) {
+        return;
+    }
     gachaCinematic.classList.remove('hidden');
+    gachaCinematic.style.display = 'grid';
     gachaCinematicReveal.innerHTML = '<div class="muted">Preparando cápsula...</div>';
 }
 
@@ -763,11 +840,19 @@ async function saveProfile() {
 }
 
 async function loadProfile() {
-    if (!state.playerToken) {
+    if (!state.playerToken && !state.authToken) {
         return;
     }
 
-    const payload = await api(`/profile?player_token=${encodeURIComponent(state.playerToken)}`);
+    const url = state.playerToken
+        ? `/profile?player_token=${encodeURIComponent(state.playerToken)}`
+        : '/profile';
+    const payload = await api(url);
+
+    if (payload.player_token) {
+        setPlayerToken(payload.player_token);
+    }
+
     state.profile = payload.profile;
     state.avatarCatalog = payload.avatar_catalog || state.avatarCatalog;
     renderAvatarOptions();
@@ -1113,9 +1198,11 @@ async function loadRoom(mode, code) {
     if (mode === 'online') {
         state.onlineRoom = data.room;
         state.onlineRoomCode = data.room.code;
+        localStorage.setItem(onlineRoomKey, data.room.code);
     } else {
         state.vsRoom = data.room;
         state.vsRoomCode = data.room.code;
+        localStorage.setItem(vsRoomKey, data.room.code);
     }
 
     await renderRoom(mode, data.room);
@@ -1217,17 +1304,65 @@ authLoginBtn.addEventListener('click', async () => {
 authLogoutBtn.addEventListener('click', async () => {
     await logoutAuth();
 });
-gachaCinematicClose.addEventListener('click', closeGachaCinematic);
-gachaCinematic.addEventListener('click', (event) => {
-    if (event.target === gachaCinematic) {
-        closeGachaCinematic();
-    }
+
+// New: Auth form toggle handlers
+authToggleRegisterBtn?.addEventListener('click', () => {
+    // Show register fields
+    authNameField?.classList.remove('hidden');
+    authPasswordConfirmField?.classList.remove('hidden');
+    // Hide login button, show register button
+    authLoginBtn?.classList.add('hidden');
+    authRegisterBtn?.classList.remove('hidden');
+    // Toggle toggle text
+    authLoginToggleText?.classList.add('hidden');
+    authRegisterToggleText?.classList.remove('hidden');
 });
-window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !gachaCinematic.classList.contains('hidden')) {
-        closeGachaCinematic();
-    }
+
+authToggleLoginBtn?.addEventListener('click', () => {
+    // Hide register fields
+    authNameField?.classList.add('hidden');
+    authPasswordConfirmField?.classList.add('hidden');
+    // Show login button, hide register button
+    authLoginBtn?.classList.remove('hidden');
+    authRegisterBtn?.classList.add('hidden');
+    // Toggle toggle text
+    authLoginToggleText?.classList.remove('hidden');
+    authRegisterToggleText?.classList.add('hidden');
 });
+
+// New: Profile edit handlers
+profileEditBtn?.addEventListener('click', () => {
+    profileCard?.classList.add('hidden');
+    profileEditSection?.classList.remove('hidden');
+});
+profileCancelBtn?.addEventListener('click', () => {
+    profileEditSection?.classList.add('hidden');
+    profileCard?.classList.remove('hidden');
+});
+// Gacha close button - with fallback
+if (gachaCinematicClose) {
+    gachaCinematicClose.addEventListener('click', closeGachaCinematic);
+} else {
+    console.warn('gacha-cinematic-close button not found');
+}
+
+// Gacha backdrop click to close - with fallback
+if (gachaCinematic) {
+    gachaCinematic.addEventListener('click', (event) => {
+        if (event.target === gachaCinematic) {
+            closeGachaCinematic();
+        }
+    });
+    
+    // Keyboard escape to close - with safeguard
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && gachaCinematic && !gachaCinematic.classList.contains('hidden')) {
+            closeGachaCinematic();
+        }
+    });
+} else {
+    console.warn('gacha-cinematic element not found');
+}
 gachaOpenBtn.addEventListener('click', async () => {
     await openGacha();
 });
@@ -1353,6 +1488,12 @@ setInterval(async () => {
     setLanguage(state.language);
     updateGoogleAuthLink();
     consumeAuthFromUrl();
+    
+    // Force gacha modal hidden immediately
+    if (gachaCinematic) {
+        gachaCinematic.classList.add('hidden');
+        gachaCinematic.style.display = 'none !important';
+    }
 
     try {
         await loadAuthMe();
@@ -1360,10 +1501,51 @@ setInterval(async () => {
         await loadProfile();
         await loadGacha();
         await loadAllPublicRooms();
+
+        // Restore active rooms from localStorage
+        if (state.onlineRoomCode) {
+            try {
+                await loadRoom('online', state.onlineRoomCode);
+                tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === 'online'));
+                modePanels.forEach((p) => p.classList.toggle('active', p.id === 'mode-online'));
+            } catch (_) {
+                state.onlineRoomCode = '';
+                localStorage.removeItem(onlineRoomKey);
+            }
+        }
+        if (state.vsRoomCode) {
+            try {
+                await loadRoom('vs', state.vsRoomCode);
+                tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === 'vs'));
+                modePanels.forEach((p) => p.classList.toggle('active', p.id === 'mode-vs'));
+            } catch (_) {
+                state.vsRoomCode = '';
+                localStorage.removeItem(vsRoomKey);
+            }
+        }
+
         const pokemon = await api('/pokemon?limit=1');
         syncStatus.textContent = `${t('loaded')}: ${pokemon.total_loaded}`;
         renderProfileHud();
+        
+        // Double-check: force modal hidden again after all loading
+        if (gachaCinematic) {
+            gachaCinematic.classList.add('hidden');
+            gachaCinematic.style.display = 'none';
+        }
     } catch (error) {
         syncStatus.textContent = t('syncError');
+        // Even on error, keep modal hidden
+        if (gachaCinematic) {
+            gachaCinematic.classList.add('hidden');
+        }
     }
+    
+    // Final safeguard: ensure modal is hidden after everything, async
+    setTimeout(() => {
+        if (gachaCinematic && !gachaCinematic.classList.contains('hidden')) {
+            gachaCinematic.classList.add('hidden');
+            gachaCinematic.style.display = 'none';
+        }
+    }, 100);
 })();

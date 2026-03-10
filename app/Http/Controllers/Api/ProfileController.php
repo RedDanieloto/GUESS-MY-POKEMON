@@ -108,6 +108,7 @@ class ProfileController extends Controller
             }
 
             return response()->json([
+                'player_token' => $profile->session_id,
                 'profile' => [
                     ...$progressionService->profilePayload($profile),
                     'avatar_key' => $profile->meta['avatar_key'] ?? 'trainer-a',

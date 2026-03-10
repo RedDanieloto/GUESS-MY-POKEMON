@@ -15,8 +15,10 @@ class AuthenticateWithTokenOrProfileToken
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Check if user is authenticated via Sanctum
-        if ($request->user()) {
+        // Check if user is authenticated via Sanctum (Bearer token)
+        $user = auth('sanctum')->user();
+        if ($user) {
+            auth()->setUser($user);
             return $next($request);
         }
 

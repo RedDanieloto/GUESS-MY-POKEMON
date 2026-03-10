@@ -29,30 +29,103 @@
                     </select>
                 </div>
                 <div class="trainer-login">
-                    <h3>Entrenador (opcional)</h3>
-                    <div class="auth-box">
-                        <input id="auth-name" class="input" type="text" placeholder="Nombre (registro)">
-                        <input id="auth-email" class="input" type="email" placeholder="Email">
-                        <input id="auth-password" class="input" type="password" placeholder="Contraseña">
-                        <input id="auth-password-confirm" class="input" type="password" placeholder="Confirmar contraseña (registro)">
-                        <div class="inline-grid">
-                            <button id="auth-register-btn" class="btn" type="button">Registrarme</button>
-                            <button id="auth-login-btn" class="btn" type="button">Entrar</button>
+                    <!-- Profile Card Display -->
+                    <div id="profile-card" class="profile-card hidden">
+                        <div class="profile-card-header">
+                            <img id="profile-card-avatar" src="" alt="Avatar" class="profile-card-avatar">
+                            <div class="profile-card-info">
+                                <h2 id="profile-card-name" class="profile-card-name">Entrenador</h2>
+                                <span id="profile-card-tier" class="profile-card-tier">Tier Principiante</span>
+                            </div>
                         </div>
-                        <a id="auth-google-btn" class="btn btn-warm" href="/auth/google/redirect">Entrar con Google</a>
-                        <button id="auth-logout-btn" class="btn hidden" type="button">Cerrar sesión</button>
-                        <div id="auth-status" class="muted">Modo invitado activo.</div>
+                        <div class="profile-card-stats">
+                            <div class="stat-item">
+                                <span class="stat-value" id="profile-card-level">1</span>
+                                <span class="stat-label">Nivel</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-value" id="profile-card-wins">0</span>
+                                <span class="stat-label">Victorias</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-value" id="profile-card-games">0</span>
+                                <span class="stat-label">Partidas</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-value" id="profile-card-xp">0</span>
+                                <span class="stat-label">XP</span>
+                            </div>
+                        </div>
+                        <button id="profile-edit-btn" class="btn-card-action" type="button">Editar Perfil</button>
                     </div>
-                    <input id="profile-nickname" class="input" type="text" placeholder="Tu nombre de entrenador">
-                    <div class="inline-grid">
-                        <select id="profile-tier" class="input">
-                            <option value="beginner">Principiante</option>
-                            <option value="intermediate">Intermedio</option>
-                            <option value="expert">Pro</option>
-                        </select>
-                        <select id="profile-avatar" class="input"></select>
+
+                    <!-- Auth Section -->
+                    <div id="auth-section" class="auth-section">
+                        <div class="auth-glass">
+                            <div class="auth-header">
+                                <div class="auth-pokeball-icon">
+                                    <svg width="28" height="28" viewBox="0 0 100 100">
+                                        <circle cx="50" cy="50" r="48" fill="none" stroke="white" stroke-width="4"/>
+                                        <path d="M2 50 H98" stroke="white" stroke-width="4"/>
+                                        <circle cx="50" cy="50" r="14" fill="none" stroke="white" stroke-width="4"/>
+                                        <circle cx="50" cy="50" r="7" fill="white"/>
+                                    </svg>
+                                </div>
+                                <h3 class="auth-title">Entrenador</h3>
+                            </div>
+                            <div id="auth-status" class="auth-status-badge">Modo invitado</div>
+
+                            <div class="auth-fields">
+                                <div id="auth-name-field" class="form-field hidden">
+                                    <input id="auth-name" class="auth-input" type="text" placeholder="Nombre de entrenador">
+                                </div>
+                                <input id="auth-email" class="auth-input" type="email" placeholder="Email">
+                                <input id="auth-password" class="auth-input" type="password" placeholder="Contraseña">
+                                <div id="auth-password-confirm-field" class="form-field hidden">
+                                    <input id="auth-password-confirm" class="auth-input" type="password" placeholder="Confirmar contraseña">
+                                </div>
+                            </div>
+
+                            <button id="auth-login-btn" class="auth-btn auth-btn-primary" type="button">
+                                <span>Entrar</span>
+                            </button>
+                            <button id="auth-register-btn" class="auth-btn auth-btn-primary hidden" type="button">
+                                <span>Registrarme</span>
+                            </button>
+
+                            <div class="auth-or"><span>o</span></div>
+
+                            <a id="auth-google-btn" class="auth-btn auth-btn-google" href="/auth/google/redirect">
+                                <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                                <span>Entrar con Google</span>
+                            </a>
+
+                            <p id="auth-login-toggle-text" class="auth-toggle-text">¿No tienes cuenta? <button id="auth-toggle-register" class="auth-link" type="button">Crear una</button></p>
+                            <p id="auth-register-toggle-text" class="auth-toggle-text hidden">¿Ya tienes cuenta? <button id="auth-toggle-login" class="auth-link" type="button">Entrar</button></p>
+
+                            <button id="auth-logout-btn" class="auth-btn auth-btn-logout hidden" type="button">Cerrar sesión</button>
+                        </div>
                     </div>
-                    <button id="profile-save-btn" class="btn" type="button">Guardar perfil</button>
+
+                    <!-- Profile Edit Section -->
+                    <div id="profile-edit-section" class="profile-edit-section hidden">
+                        <div class="auth-glass">
+                            <h3 class="auth-title" style="margin-bottom: 0.75rem;">Editar Perfil</h3>
+                            <div class="auth-fields">
+                                <input id="profile-nickname" class="auth-input" type="text" placeholder="Tu nombre de entrenador">
+                                <select id="profile-tier" class="auth-input">
+                                    <option value="beginner">Principiante</option>
+                                    <option value="intermediate">Intermedio</option>
+                                    <option value="expert">Pro</option>
+                                </select>
+                                <select id="profile-avatar" class="auth-input"></select>
+                            </div>
+                            <div class="profile-edit-actions">
+                                <button id="profile-save-btn" class="auth-btn auth-btn-primary" type="button">Guardar</button>
+                                <button id="profile-cancel-btn" class="auth-btn auth-btn-secondary" type="button">Cancelar</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
