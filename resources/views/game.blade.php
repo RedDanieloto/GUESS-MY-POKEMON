@@ -57,6 +57,7 @@
                             </div>
                         </div>
                         <button id="profile-edit-btn" class="btn-card-action" type="button">Editar Perfil</button>
+                        <button id="profile-logout-btn" class="btn-card-action btn-card-logout hidden" type="button">Cerrar Sesión</button>
                     </div>
 
                     <!-- Auth Section -->
@@ -147,6 +148,7 @@
             <button class="tab-btn active" data-mode="local" type="button">Local</button>
             <button class="tab-btn" data-mode="online" type="button">Online</button>
             <button class="tab-btn" data-mode="vs" type="button">VS</button>
+            <button class="tab-btn" data-mode="pokedex" type="button">Pokédex</button>
             <button class="tab-btn" data-mode="user" type="button">Usuario</button>
         </nav>
 
@@ -232,6 +234,35 @@
                     <div id="vs-public-list" class="list"></div>
                 </div>
                 <div id="vs-state" class="room-state hidden"></div>
+            </section>
+
+            <section class="panel mode-panel" id="mode-pokedex">
+                <h2>Pokédex Completa</h2>
+                <p class="muted">Todos los Pokémon disponibles ordenados por número de Pokédex.</p>
+                <div class="inline-grid" style="margin-bottom: .5rem;">
+                    <input id="pokedex-search" class="input" type="text" placeholder="Buscar nombre o #número">
+                    <select id="pokedex-gen-filter" class="input">
+                        <option value="">Todas las gen.</option>
+                        <option value="1">Gen 1</option>
+                        <option value="2">Gen 2</option>
+                        <option value="3">Gen 3</option>
+                        <option value="4">Gen 4</option>
+                        <option value="5">Gen 5</option>
+                        <option value="6">Gen 6</option>
+                        <option value="7">Gen 7</option>
+                        <option value="8">Gen 8</option>
+                        <option value="9">Gen 9</option>
+                    </select>
+                    <select id="pokedex-type-filter" class="input">
+                        <option value="">Todos los tipos</option>
+                    </select>
+                </div>
+                <div id="pokedex-count" class="muted" style="margin-bottom: .5rem;"></div>
+                <div id="pokedex-grid" class="pokedex-grid"></div>
+                <div style="text-align:center; margin-top: .75rem;">
+                    <button id="pokedex-load-more" class="btn" type="button">Cargar más</button>
+                </div>
+                <div id="pokedex-detail" class="pokemon-detail-modal hidden"></div>
             </section>
 
             <section class="panel mode-panel" id="mode-user">

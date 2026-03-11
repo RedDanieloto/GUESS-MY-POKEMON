@@ -21,6 +21,18 @@ class GameRoom extends Model
         'host_session_id',
         'turn_session_id',
         'winner_session_id',
+        'timer_enabled',
+        'timer_seconds',
+        'timer_p1_remaining',
+        'timer_p2_remaining',
+        'timer_last_tick',
+        'timer_proposed_by',
+        'surrendered_by',
+    ];
+
+    protected $casts = [
+        'timer_enabled' => 'boolean',
+        'timer_last_tick' => 'datetime',
     ];
 
     public function players(): HasMany

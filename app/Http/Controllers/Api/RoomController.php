@@ -251,16 +251,38 @@ class RoomController extends Controller
 
         $target = $this->targetPlayerForQuestion($room, $player);
 
-        RoomQuestion::query()->create([
+        // Auto-evaluate structured questions using the hidden Pokémon
+        $autoAnswer = null;
+        if ($questionKey && $target && $target->hidden_pokemon_id) {
+            $hiddenPokemon = $target->hiddenPokemon;
+            if ($hiddenPokemon) {
+                $autoAnswer = QuestionEvaluator::evaluate($questionKey, $hiddenPokemon);
+            }
+        }
+
+        $question = RoomQuestion::query()->create([
             'game_room_id' => $room->id,
             'asked_by_session_id' => $player->session_id,
             'target_session_id' => $target?->session_id,
             'question_key' => $questionKey,
             'question_text' => $text,
-            'meta' => ['kind' => 'question'],
+            'answer' => $autoAnswer,
+            'answered_at' => $autoAnswer ? now() : null,
+            'meta' => ['kind' => 'question', 'auto_answered' => (bool) $autoAnswer],
         ]);
         $this->incrementProfileStat($player->session_id, 'questions_asked', 1);
         $this->awardExperience($player->session_id, $room, 8);
+
+        if ($autoAnswer && $target) {
+            $this->incrementProfileStat($target->session_id, 'questions_answered', 1);
+            $this->awardExperience($target->session_id, $room, 6);
+
+            // In VS mode, pass the turn after auto-answer
+            if ($room->mode === 'vs' && $room->status === 'active') {
+                $room->turn_session_id = $target->session_id;
+                $room->save();
+            }
+        }
 
         return response()->json([
             'room' => $this->roomPayload($room->fresh(), $validated['player_token']),
@@ -365,10 +387,154 @@ class RoomController extends Controller
         ]);
     }
 
+    public function surrender(Request $request, string $code): JsonResponse
+    {
+        $validated = $request->validate([
+            'player_token' => ['required', 'string', 'max:64'],
+        ]);
+
+        $room = GameRoom::query()->where('code', strtoupper($code))->firstOrFail();
+
+        if ($room->status === 'finished') {
+            return response()->json(['message' => 'La partida ya terminó'], 422);
+        }
+
+        $player = $this->roomPlayerOrFail($room, $validated['player_token']);
+
+        $opponent = RoomPlayer::query()
+            ->where('game_room_id', $room->id)
+            ->where('session_id', '!=', $player->session_id)
+            ->first();
+
+        $room->status = 'finished';
+        $room->surrendered_by = $player->session_id;
+        $room->winner_session_id = $opponent?->session_id;
+        $room->save();
+
+        if ($opponent) {
+            $this->finalizeRoomExperience($room, $opponent->session_id);
+        }
+
+        return response()->json([
+            'room' => $this->roomPayload($room->fresh(), $validated['player_token']),
+        ]);
+    }
+
+    public function timerPropose(Request $request, string $code): JsonResponse
+    {
+        $validated = $request->validate([
+            'player_token' => ['required', 'string', 'max:64'],
+        ]);
+
+        $room = GameRoom::query()->where('code', strtoupper($code))->firstOrFail();
+
+        if ($room->status === 'finished') {
+            return response()->json(['message' => 'La partida ya terminó'], 422);
+        }
+
+        $player = $this->roomPlayerOrFail($room, $validated['player_token']);
+
+        if ($room->timer_enabled) {
+            return response()->json(['message' => 'El reloj ya está activo'], 422);
+        }
+
+        $room->timer_proposed_by = $player->session_id;
+        $room->save();
+
+        return response()->json([
+            'room' => $this->roomPayload($room->fresh(), $validated['player_token']),
+        ]);
+    }
+
+    public function timerAccept(Request $request, string $code): JsonResponse
+    {
+        $validated = $request->validate([
+            'player_token' => ['required', 'string', 'max:64'],
+            'accept' => ['required', 'boolean'],
+        ]);
+
+        $room = GameRoom::query()->where('code', strtoupper($code))->firstOrFail();
+
+        if ($room->status === 'finished') {
+            return response()->json(['message' => 'La partida ya terminó'], 422);
+        }
+
+        $player = $this->roomPlayerOrFail($room, $validated['player_token']);
+
+        if ($room->timer_enabled) {
+            return response()->json(['message' => 'El reloj ya está activo'], 422);
+        }
+
+        if (! $room->timer_proposed_by) {
+            return response()->json(['message' => 'No hay propuesta de reloj pendiente'], 422);
+        }
+
+        if ($room->timer_proposed_by === $player->session_id) {
+            return response()->json(['message' => 'No puedes aceptar tu propia propuesta'], 422);
+        }
+
+        if ($validated['accept']) {
+            $room->timer_enabled = true;
+            $room->timer_p1_remaining = $room->timer_seconds;
+            $room->timer_p2_remaining = $room->timer_seconds;
+            $room->timer_last_tick = now();
+            $room->timer_proposed_by = null;
+        } else {
+            $room->timer_proposed_by = null;
+        }
+
+        $room->save();
+
+        return response()->json([
+            'room' => $this->roomPayload($room->fresh(), $validated['player_token']),
+        ]);
+    }
+
+    private function tickTimer(GameRoom $room): void
+    {
+        if (! $room->timer_enabled || $room->status !== 'active' || ! $room->timer_last_tick) {
+            return;
+        }
+
+        $elapsed = (int) now()->diffInSeconds($room->timer_last_tick);
+        if ($elapsed <= 0) {
+            return;
+        }
+
+        $players = RoomPlayer::query()->where('game_room_id', $room->id)->orderBy('id')->get();
+        if ($players->count() < 2) {
+            return;
+        }
+
+        $p1 = $players->first();
+
+        if ($room->turn_session_id === $p1->session_id) {
+            $room->timer_p1_remaining = max(0, (int) $room->timer_p1_remaining - $elapsed);
+        } else {
+            $room->timer_p2_remaining = max(0, (int) $room->timer_p2_remaining - $elapsed);
+        }
+
+        $room->timer_last_tick = now();
+
+        if ($room->timer_p1_remaining <= 0 || $room->timer_p2_remaining <= 0) {
+            $room->status = 'finished';
+            $loser = $room->timer_p1_remaining <= 0 ? $p1 : $players->last();
+            $winner = $room->timer_p1_remaining <= 0 ? $players->last() : $p1;
+            $room->winner_session_id = $winner->session_id;
+            $room->save();
+            $this->finalizeRoomExperience($room, $winner->session_id);
+            return;
+        }
+
+        $room->save();
+    }
+
     private function roomPayload(GameRoom $room, string $sessionId): array
     {
+        $this->tickTimer($room);
+
         $room->load([
-            'players.hiddenPokemon:id,display_name,pokeapi_id,primary_type,secondary_type,generation,sprites',
+            'players.hiddenPokemon',
             'questions' => fn ($query) => $query->latest()->limit(100),
         ]);
 
@@ -408,6 +574,8 @@ class RoomController extends Controller
                 ];
             });
 
+        $p1Session = $players->first()?->session_id;
+
         return [
             'id' => $room->id,
             'code' => $room->code,
@@ -419,6 +587,7 @@ class RoomController extends Controller
             'status' => $room->status,
             'turn_session_id' => $room->turn_session_id,
             'winner_session_id' => $room->winner_session_id,
+            'surrendered_by' => $room->surrendered_by,
             'am_i_in_room' => (bool) $me,
             'my_role' => $me?->role,
             'my_session_id' => $sessionId,
@@ -428,6 +597,14 @@ class RoomController extends Controller
             'remaining_hint' => $me ? $this->remainingHint($room, $me) : null,
             'pokedex_loaded' => Pokemon::query()->count(),
             'my_profile' => $this->profilePayloadFor($sessionId),
+            'timer' => [
+                'enabled' => (bool) $room->timer_enabled,
+                'seconds' => (int) $room->timer_seconds,
+                'proposed_by' => $room->timer_proposed_by,
+                'proposed_by_name' => $room->timer_proposed_by ? ($nicknameBySession[$room->timer_proposed_by] ?? null) : null,
+                'my_remaining' => $me ? ($me->session_id === $p1Session ? $room->timer_p1_remaining : $room->timer_p2_remaining) : null,
+                'opponent_remaining' => $me ? ($me->session_id === $p1Session ? $room->timer_p2_remaining : $room->timer_p1_remaining) : null,
+            ],
         ];
     }
 

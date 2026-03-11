@@ -51,9 +51,10 @@ class PokemonController extends Controller
         }
 
         $limit = min(max((int) $request->query('limit', 50), 1), 200);
+        $offset = max((int) $request->query('offset', 0), 0);
 
         return response()->json([
-            'data' => $query->limit($limit)->get(),
+            'data' => $query->offset($offset)->limit($limit)->get(),
             'total_loaded' => Pokemon::query()->count(),
         ]);
     }

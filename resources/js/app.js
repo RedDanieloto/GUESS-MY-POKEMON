@@ -98,6 +98,7 @@ const authRegisterBtn = document.getElementById('auth-register-btn');
 const authLoginBtn = document.getElementById('auth-login-btn');
 const authGoogleBtn = document.getElementById('auth-google-btn');
 const authLogoutBtn = document.getElementById('auth-logout-btn');
+const profileLogoutBtn = document.getElementById('profile-logout-btn');
 const authStatus = document.getElementById('auth-status');
 const authSection = document.getElementById('auth-section');
 const authNameField = document.getElementById('auth-name-field');
@@ -276,6 +277,7 @@ function renderAuthStatus() {
     if (!state.authUser) {
         authStatus.textContent = t('guestMode');
         authLogoutBtn.classList.add('hidden');
+        profileLogoutBtn?.classList.add('hidden');
         authFields.forEach((element) => element.classList.remove('hidden'));
         // Show auth-or divider and google btn
         const authOr = document.querySelector('.auth-or');
@@ -288,6 +290,7 @@ function renderAuthStatus() {
 
     authStatus.textContent = `${t('loggedAs')}: ${state.authUser.name} (${state.authUser.email})`;
     authLogoutBtn.classList.remove('hidden');
+    profileLogoutBtn?.classList.remove('hidden');
     authFields.forEach((element) => element.classList.add('hidden'));
     // Hide divider and toggle when logged in
     const authOr = document.querySelector('.auth-or');
@@ -870,15 +873,25 @@ async function loadProfile() {
 
 function pokemonCardHtml(pokemon) {
     const sprite = pokemonSpriteUrl(pokemon);
+    const height = pokemon.height_dm != null ? (pokemon.height_dm / 10).toFixed(1) : '?';
+    const weight = pokemon.weight_hg != null ? (pokemon.weight_hg / 10).toFixed(1) : '?';
+    const abilities = (pokemon.abilities || []).join(', ') || '—';
+    const stats = pokemon.stats || {};
+    const totalStats = Object.values(stats).reduce((a, b) => a + b, 0);
+
     return `
         <img src="${sprite}" alt="${pokemon.display_name}">
         <div>
             <strong>#${pokemon.pokeapi_id} ${pokemon.display_name}</strong>
             <div class="muted">Gen ${pokemon.generation || '?'} | ${formatType(pokemon.primary_type)}${pokemon.secondary_type ? ` / ${formatType(pokemon.secondary_type)}` : ''}</div>
-            <div class="muted">Altura: ${(pokemon.height_dm / 10).toFixed(1)} m | Peso: ${(pokemon.weight_hg / 10).toFixed(1)} kg</div>
+            <div class="muted">Altura: ${height} m | Peso: ${weight} kg</div>
+            <div class="muted">Habilidades: ${abilities}</div>
+            <div class="muted">HP: ${stats.hp ?? '?'} | Atk: ${stats.attack ?? '?'} | Def: ${stats.defense ?? '?'} | SpA: ${stats['special-attack'] ?? '?'} | SpD: ${stats['special-defense'] ?? '?'} | Spe: ${stats.speed ?? '?'} | Total: ${totalStats}</div>
+            <div class="muted">Exp base: ${pokemon.base_experience ?? '?'}</div>
             <div>
                 ${pokemon.is_legendary ? `<span class="pill">${t('legendary')}</span>` : ''}
                 ${pokemon.is_mythical ? `<span class="pill">${t('mythical')}</span>` : ''}
+                ${pokemon.is_baby ? '<span class="pill">Bebé</span>' : ''}
             </div>
         </div>
     `;
@@ -911,6 +924,102 @@ async function searchPokemon(term, limit = 20) {
     const data = await api(url);
     return data.data || [];
 }
+
+// ── Pokédex browser ──
+const pokedexGrid = document.getElementById('pokedex-grid');
+const pokedexSearch = document.getElementById('pokedex-search');
+const pokedexGenFilter = document.getElementById('pokedex-gen-filter');
+const pokedexTypeFilter = document.getElementById('pokedex-type-filter');
+const pokedexLoadMore = document.getElementById('pokedex-load-more');
+const pokedexCount = document.getElementById('pokedex-count');
+const pokedexDetail = document.getElementById('pokedex-detail');
+let pokedexOffset = 0;
+const pokedexPageSize = 60;
+
+function pokedexCompactCardHtml(pokemon) {
+    const sprite = pokemonSpriteUrl(pokemon);
+    return `<button type="button" class="pokedex-card" data-pokemon-detail='${JSON.stringify(pokemon).replace(/'/g, '&#39;')}'>
+        <img src="${sprite}" alt="${pokemon.display_name}" loading="lazy">
+        <span class="pokedex-card-num">#${pokemon.pokeapi_id}</span>
+        <span class="pokedex-card-name">${pokemon.display_name}</span>
+    </button>`;
+}
+
+function buildPokedexQuery() {
+    const params = new URLSearchParams();
+    const search = pokedexSearch.value.trim();
+    if (search) params.set('search', search);
+    const gen = pokedexGenFilter.value;
+    if (gen) params.set('generation', gen);
+    const type = pokedexTypeFilter.value;
+    if (type) params.set('type', type);
+    params.set('limit', String(pokedexPageSize));
+    return params;
+}
+
+async function loadPokedexPage(append = false) {
+    const params = buildPokedexQuery();
+    params.set('offset', String(pokedexOffset));
+    const data = await api(`/pokemon?${params.toString()}`);
+    const list = data.data || [];
+
+    if (!append) {
+        pokedexGrid.innerHTML = '';
+    }
+
+    pokedexGrid.insertAdjacentHTML('beforeend', list.map(pokedexCompactCardHtml).join(''));
+    pokedexCount.textContent = `Mostrando ${pokedexGrid.children.length} de ${data.total_loaded} Pokémon`;
+    pokedexLoadMore.classList.toggle('hidden', list.length < pokedexPageSize);
+    bindPokedexDetailClicks();
+}
+
+function bindPokedexDetailClicks() {
+    pokedexGrid.querySelectorAll('.pokedex-card').forEach((btn) => {
+        btn.onclick = () => {
+            const pokemon = JSON.parse(btn.dataset.pokemonDetail);
+            showPokedexDetail(pokemon);
+        };
+    });
+}
+
+function showPokedexDetail(pokemon) {
+    pokedexDetail.classList.remove('hidden');
+    pokedexDetail.innerHTML = `
+        <div class="pokedex-detail-inner">
+            <button type="button" class="pokedex-detail-close" id="pokedex-detail-close">&times;</button>
+            <div class="pokemon-card">${pokemonCardHtml(pokemon)}</div>
+        </div>
+    `;
+    document.getElementById('pokedex-detail-close').addEventListener('click', () => {
+        pokedexDetail.classList.add('hidden');
+    });
+}
+
+function populateTypeFilter() {
+    const types = ['normal','fire','water','grass','electric','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'];
+    pokedexTypeFilter.innerHTML = '<option value="">Todos los tipos</option>' +
+        types.map((t) => `<option value="${t}">${formatType(t)}</option>`).join('');
+}
+
+pokedexSearch.addEventListener('input', debounce(() => {
+    pokedexOffset = 0;
+    loadPokedexPage();
+}, 300));
+
+pokedexGenFilter.addEventListener('change', () => {
+    pokedexOffset = 0;
+    loadPokedexPage();
+});
+
+pokedexTypeFilter.addEventListener('change', () => {
+    pokedexOffset = 0;
+    loadPokedexPage();
+});
+
+pokedexLoadMore.addEventListener('click', () => {
+    pokedexOffset += pokedexPageSize;
+    loadPokedexPage(true);
+});
 
 async function handleLocalSearch() {
     const found = await searchPokemon(localSearchInput.value, 24);
@@ -1016,7 +1125,39 @@ function roomStateHtml(room) {
         : '';
 
     const winnerHtml = room.status === 'finished' && room.winner_session_id
-        ? `<p><strong>Ganador:</strong> ${room.players.find((player) => player.session_id === room.winner_session_id)?.nickname || 'Jugador'}</p>`
+        ? `<p><strong>Ganador:</strong> ${room.players.find((player) => player.session_id === room.winner_session_id)?.nickname || 'Jugador'}${room.surrendered_by ? ' (por rendición)' : ''}</p>`
+        : '';
+
+    // Timer display
+    const timer = room.timer || {};
+    let timerHtml = '';
+    if (timer.enabled && room.status !== 'finished') {
+        const fmtTime = (s) => { const m = Math.floor(s / 60); const sec = s % 60; return `${m}:${sec.toString().padStart(2, '0')}`; };
+        timerHtml = `<div class="room-timer">
+            <span class="timer-clock ${timer.my_remaining <= 30 ? 'timer-danger' : ''}">⏱ Tú: ${fmtTime(timer.my_remaining ?? 0)}</span>
+            <span class="timer-clock ${timer.opponent_remaining <= 30 ? 'timer-danger' : ''}">⏱ Rival: ${fmtTime(timer.opponent_remaining ?? 0)}</span>
+        </div>`;
+    }
+
+    // Timer proposal
+    let timerProposalHtml = '';
+    if (room.status !== 'finished' && !timer.enabled) {
+        if (timer.proposed_by && timer.proposed_by !== me?.session_id) {
+            timerProposalHtml = `<div class="timer-proposal">
+                <p><strong>${timer.proposed_by_name}</strong> propone activar reloj (3 min por jugador)</p>
+                <button class="btn" type="button" data-action="timer-accept">Aceptar</button>
+                <button class="btn" type="button" data-action="timer-reject">Rechazar</button>
+            </div>`;
+        } else if (timer.proposed_by && timer.proposed_by === me?.session_id) {
+            timerProposalHtml = `<p class="muted">Esperando que el rival acepte el reloj...</p>`;
+        } else {
+            timerProposalHtml = `<button class="btn btn-sm" type="button" data-action="timer-propose" title="Proponer reloj de 3 min por jugador">⏱ Proponer reloj</button>`;
+        }
+    }
+
+    // Surrender
+    const surrenderHtml = room.status !== 'finished' && me
+        ? `<button class="btn btn-danger" type="button" data-action="surrender">🏳️ Rendirse</button>`
         : '';
 
     return `
@@ -1026,6 +1167,8 @@ function roomStateHtml(room) {
             ${room.room_name ? `<p><strong>Sala:</strong> ${room.room_name}</p>` : ''}
             <p><strong>Estado:</strong> ${room.status}${amTurn ? ' | Te toca' : ''}</p>
             ${winnerHtml}
+            ${timerHtml}
+            ${timerProposalHtml}
             <p class="muted">Pokemon cargados en tu base: ${room.pokedex_loaded}</p>
             <div>${playersHtml}</div>
 
@@ -1065,6 +1208,8 @@ function roomStateHtml(room) {
                 <h3>Historial</h3>
                 ${historyHtml || '<p class="muted">Aun no hay preguntas.</p>'}
             </div>
+
+            ${surrenderHtml}
         </div>
     `;
 }
@@ -1184,6 +1329,55 @@ function bindRoomEvents(mode, room) {
             }
         });
     });
+
+    container.querySelector('[data-action="surrender"]')?.addEventListener('click', async () => {
+        if (!confirm('¿Seguro que quieres rendirte? Perderás la partida.')) return;
+        try {
+            await api(`/rooms/${room.code}/surrender`, {
+                method: 'POST',
+                data: { player_token: state.playerToken },
+            });
+            await refreshRoom();
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+
+    container.querySelector('[data-action="timer-propose"]')?.addEventListener('click', async () => {
+        try {
+            await api(`/rooms/${room.code}/timer-propose`, {
+                method: 'POST',
+                data: { player_token: state.playerToken },
+            });
+            await refreshRoom();
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+
+    container.querySelector('[data-action="timer-accept"]')?.addEventListener('click', async () => {
+        try {
+            await api(`/rooms/${room.code}/timer-accept`, {
+                method: 'POST',
+                data: { player_token: state.playerToken, accept: true },
+            });
+            await refreshRoom();
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+
+    container.querySelector('[data-action="timer-reject"]')?.addEventListener('click', async () => {
+        try {
+            await api(`/rooms/${room.code}/timer-accept`, {
+                method: 'POST',
+                data: { player_token: state.playerToken, accept: false },
+            });
+            await refreshRoom();
+        } catch (error) {
+            alert(error.message);
+        }
+    });
 }
 
 async function renderRoom(mode, room) {
@@ -1302,6 +1496,9 @@ authLoginBtn.addEventListener('click', async () => {
     }
 });
 authLogoutBtn.addEventListener('click', async () => {
+    await logoutAuth();
+});
+profileLogoutBtn?.addEventListener('click', async () => {
     await logoutAuth();
 });
 
@@ -1472,6 +1669,25 @@ setInterval(async () => {
     }
 }, 3000);
 
+// Client-side timer countdown (visual only, ticks between polls)
+setInterval(() => {
+    document.querySelectorAll('.room-timer').forEach((timerEl) => {
+        timerEl.querySelectorAll('.timer-clock').forEach((clock) => {
+            const match = clock.textContent.match(/(\d+):(\d+)/);
+            if (!match) return;
+            let total = parseInt(match[1]) * 60 + parseInt(match[2]);
+            if (total > 0) total--;
+            const m = Math.floor(total / 60);
+            const s = total % 60;
+            const label = clock.textContent.startsWith('⏱ Tú') ? '⏱ Tú: ' : '⏱ Rival: ';
+            clock.textContent = `${label}${m}:${s.toString().padStart(2, '0')}`;
+            if (total <= 30) {
+                clock.classList.add('timer-danger');
+            }
+        });
+    });
+}, 1000);
+
 setInterval(async () => {
     try {
         if (isUserTyping()) {
@@ -1527,6 +1743,8 @@ setInterval(async () => {
         const pokemon = await api('/pokemon?limit=1');
         syncStatus.textContent = `${t('loaded')}: ${pokemon.total_loaded}`;
         renderProfileHud();
+        populateTypeFilter();
+        loadPokedexPage();
         
         // Double-check: force modal hidden again after all loading
         if (gachaCinematic) {

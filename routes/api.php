@@ -36,4 +36,7 @@ Route::middleware('auth.token.or.profile')->group(function (): void {
     Route::post('/rooms/{code}/ask', [RoomController::class, 'ask']);
     Route::post('/rooms/{code}/answer', [RoomController::class, 'answer']);
     Route::post('/rooms/{code}/guess', [RoomController::class, 'guess']);
+    Route::post('/rooms/{code}/surrender', [RoomController::class, 'surrender']);
+    Route::post('/rooms/{code}/timer-propose', [RoomController::class, 'timerPropose']);
+    Route::post('/rooms/{code}/timer-accept', [RoomController::class, 'timerAccept']);
 });
