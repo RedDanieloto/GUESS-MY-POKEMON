@@ -43,14 +43,20 @@ class GachaService
                 'level_reached' => $level,
                 'rarity' => $rarity,
                 'ball_type' => $this->ballForRarity($rarity),
-                'meta' => ['kind' => 'level_reward'],
+                'meta' => [
+                    'kind' => 'level_reward',
+                    'is_shiny' => $rarity === 'shiny',
+                ],
             ]);
         }
     }
 
     public function grantTierUpReward(PlayerProfile $profile, string $tierCode): void
     {
-        $rarity = random_int(1, 100) <= 65 ? 'mythic' : 'legendary';
+        $roll = random_int(1, 1000);
+        $rarity = $roll <= 8
+            ? 'shiny'
+            : (random_int(1, 100) <= 65 ? 'mythic' : 'legendary');
         $pokemon = $this->pickPokemonForRarity($rarity);
 
         if (! $pokemon) {
@@ -64,8 +70,36 @@ class GachaService
             'tier_code' => $tierCode,
             'rarity' => $rarity,
             'ball_type' => $this->ballForRarity($rarity),
-            'meta' => ['kind' => 'tier_reward'],
+            'meta' => [
+                'kind' => 'tier_reward',
+                'is_shiny' => $rarity === 'shiny',
+            ],
         ]);
+    }
+
+    public function grantAdminRewards(PlayerProfile $profile, int $count = 1, ?string $rarity = null): void
+    {
+        $count = max(1, min(100, $count));
+
+        for ($i = 0; $i < $count; $i++) {
+            $currentRarity = $rarity ?: $this->rollRarityForLevel(max(1, (int) $profile->level));
+            $pokemon = $this->pickPokemonForRarity($currentRarity);
+            if (! $pokemon) {
+                continue;
+            }
+
+            PlayerGachaReward::query()->create([
+                'player_profile_id' => $profile->id,
+                'pokemon_id' => $pokemon->id,
+                'source' => 'admin',
+                'rarity' => $currentRarity,
+                'ball_type' => $this->ballForRarity($currentRarity),
+                'meta' => [
+                    'kind' => 'admin_reward',
+                    'is_shiny' => $currentRarity === 'shiny',
+                ],
+            ]);
+        }
     }
 
     /**
@@ -145,6 +179,11 @@ class GachaService
      */
     public function rewardPayload(PlayerGachaReward $reward): array
     {
+        $isShiny = (bool) ($reward->meta['is_shiny'] ?? false);
+        $shinyFallback = $reward->pokemon?->pokeapi_id
+            ? 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/'.$reward->pokemon->pokeapi_id.'.png'
+            : null;
+
         return [
             'id' => $reward->id,
             'source' => $reward->source,
@@ -155,15 +194,18 @@ class GachaService
             'ball_sprite' => self::ballCatalog()[$reward->ball_type] ?? self::ballCatalog()['poke-ball'],
             'is_opened' => $reward->is_opened,
             'opened_at' => $reward->opened_at?->toIso8601String(),
+            'is_shiny' => $isShiny,
             'pokemon' => [
                 'id' => $reward->pokemon?->id,
                 'pokeapi_id' => $reward->pokemon?->pokeapi_id,
                 'display_name' => $reward->pokemon?->display_name,
                 'sprite' => SpriteService::pokemonSpriteUrl(
                     $reward->pokemon?->pokeapi_id,
-                    $reward->pokemon?->sprites['front_default']
-                        ?? $reward->pokemon?->sprites['official_artwork']
-                        ?? null,
+                    $isShiny
+                        ? ($reward->pokemon?->sprites['front_shiny'] ?? $shinyFallback)
+                        : ($reward->pokemon?->sprites['front_default']
+                            ?? $reward->pokemon?->sprites['official_artwork']
+                            ?? null),
                 ),
                 'primary_type' => $reward->pokemon?->primary_type,
                 'secondary_type' => $reward->pokemon?->secondary_type,
@@ -176,11 +218,16 @@ class GachaService
         $levelBonus = min(18, max(0, $level - 1));
         $roll = random_int(1, 10000);
 
-        $legendaryThreshold = 10 + (int) floor($levelBonus * 0.7);
+        $shinyThreshold = 4 + (int) floor($levelBonus * 0.25);
+        $legendaryThreshold = $shinyThreshold + 10 + (int) floor($levelBonus * 0.7);
         $mythicThreshold = $legendaryThreshold + 25 + $levelBonus;
         $ultraThreshold = $mythicThreshold + 220 + ($levelBonus * 5);
         $specialThreshold = $ultraThreshold + 900 + ($levelBonus * 12);
         $rareThreshold = $specialThreshold + 2300 + ($levelBonus * 15);
+
+        if ($roll <= $shinyThreshold) {
+            return 'shiny';
+        }
 
         if ($roll <= $legendaryThreshold) {
             return 'legendary';
@@ -208,6 +255,7 @@ class GachaService
     private function ballForRarity(string $rarity): string
     {
         return match ($rarity) {
+            'shiny' => 'master-ball',
             'legendary' => 'master-ball',
             'mythic' => 'cherish-ball',
             'ultra' => 'ultra-ball',
@@ -230,6 +278,7 @@ class GachaService
             $total = array_sum((array) ($pokemon->stats ?? []));
 
             return match ($rarity) {
+                'shiny' => ! $pokemon->is_legendary && ! $pokemon->is_mythical,
                 'legendary' => (bool) $pokemon->is_legendary,
                 'mythic' => (bool) $pokemon->is_mythical,
                 'ultra' => ! $pokemon->is_legendary && ! $pokemon->is_mythical && ($total >= 560 || (int) $pokemon->base_experience >= 240),

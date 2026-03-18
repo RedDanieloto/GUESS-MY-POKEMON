@@ -12,6 +12,11 @@ use Illuminate\Support\Str;
 
 class ProfileController extends Controller
 {
+    private function playerTokenFromRequest(Request $request): string
+    {
+        return trim((string) ($request->input('player_token') ?: $request->query('player_token', '')));
+    }
+
     private function resolveApiUser(Request $request)
     {
         return auth('sanctum')->user() ?: $request->user();
@@ -101,9 +106,37 @@ class ProfileController extends Controller
 
     public function show(Request $request, ProgressionService $progressionService): JsonResponse
     {
+        $playerToken = $this->playerTokenFromRequest($request);
+
+        if ($playerToken !== '') {
+            $tokenProfile = PlayerProfile::query()->where('session_id', $playerToken)->first();
+            if ($tokenProfile) {
+                if ($user = $this->resolveApiUser($request)) {
+                    if ($tokenProfile->user_id === null || (int) $tokenProfile->user_id === (int) $user->id) {
+                        if ($tokenProfile->user_id === null) {
+                            $tokenProfile->user_id = $user->id;
+                            $tokenProfile->save();
+                        }
+                    }
+                }
+
+                return response()->json([
+                    'player_token' => $tokenProfile->session_id,
+                    'profile' => [
+                        ...$progressionService->profilePayload($tokenProfile),
+                        'avatar_key' => $tokenProfile->meta['avatar_key'] ?? 'trainer-a',
+                    ],
+                    'avatar_catalog' => self::avatarCatalog(),
+                ]);
+            }
+        }
+
         // If user is authenticated, show their profile
         if ($user = $this->resolveApiUser($request)) {
-            $profile = PlayerProfile::query()->where('user_id', $user->id)->first();
+            $profile = PlayerProfile::query()
+                ->where('user_id', $user->id)
+                ->latest('updated_at')
+                ->first();
 
             if (! $profile) {
                 return response()->json([
@@ -122,12 +155,9 @@ class ProfileController extends Controller
             ]);
         }
 
-        // Otherwise, use player_token
-        $validated = $request->validate([
-            'player_token' => ['required', 'string', 'max:64'],
-        ]);
-
-        $profile = PlayerProfile::query()->where('session_id', $validated['player_token'])->first();
+        $profile = $playerToken !== ''
+            ? PlayerProfile::query()->where('session_id', $playerToken)->first()
+            : null;
 
         if (! $profile) {
             return response()->json([

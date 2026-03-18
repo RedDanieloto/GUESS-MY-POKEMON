@@ -17,6 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'auth.token.or.profile' => \App\Http\Middleware\AuthenticateWithTokenOrProfileToken::class,
+            'admin' => \App\Http\Middleware\EnsureAdmin::class,
+            'not.banned' => \App\Http\Middleware\RejectBannedUsers::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -55,6 +55,13 @@ class AuthController extends Controller
             return response()->json(['message' => 'Credenciales inválidas'], 422);
         }
 
+        if ((bool) $user->is_banned) {
+            return response()->json([
+                'message' => 'Tu cuenta está suspendida',
+                'reason' => $user->banned_reason,
+            ], 403);
+        }
+
         $token = $user->createToken('game-web')->plainTextToken;
         $this->linkGuestProfileToUser($validated['player_token'] ?? null, $user);
 
@@ -70,6 +77,13 @@ class AuthController extends Controller
 
         if (! $user) {
             return response()->json(['user' => null], 401);
+        }
+
+        if ((bool) $user->is_banned) {
+            return response()->json([
+                'message' => 'Tu cuenta está suspendida',
+                'reason' => $user->banned_reason,
+            ], 403);
         }
 
         return response()->json([
@@ -146,6 +160,10 @@ class AuthController extends Controller
             $user->save();
         }
 
+        if ((bool) $user->is_banned) {
+            return $this->redirectWithAuthError('account_banned');
+        }
+
         $stateRaw = (string) $request->query('state', '');
         $state = json_decode(base64_decode($stateRaw, true) ?: '{}', true);
         $playerToken = is_array($state) ? (($state['player_token'] ?? null) ?: null) : null;
@@ -195,6 +213,8 @@ class AuthController extends Controller
             'email' => $user->email,
             'avatar_url' => $user->avatar_url,
             'has_google' => (bool) $user->google_id,
+            'is_admin' => (bool) $user->is_admin,
+            'is_banned' => (bool) $user->is_banned,
         ];
     }
 

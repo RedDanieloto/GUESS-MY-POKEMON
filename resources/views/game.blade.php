@@ -328,6 +328,55 @@
                     <div id="collection-summary" class="answer-badge">Aún no tienes Pokémon en tu colección.</div>
                     <div id="collection-grid" class="pokedex-grid"></div>
                 </div>
+
+                <div id="admin-panel" class="sub-panel hidden" style="margin-top:.75rem;">
+                    <h3>Panel Admin</h3>
+                    <p class="muted">Moderación de usuarios y control de salas en tiempo real.</p>
+
+                    <div id="admin-dashboard" class="admin-stats-grid" style="margin-bottom:.75rem;">
+                        <div class="admin-stat"><span class="muted">Usuarios</span><strong id="admin-stat-users">0</strong></div>
+                        <div class="admin-stat"><span class="muted">Admins</span><strong id="admin-stat-admins">0</strong></div>
+                        <div class="admin-stat"><span class="muted">Baneados</span><strong id="admin-stat-banned">0</strong></div>
+                        <div class="admin-stat"><span class="muted">Salas activas</span><strong id="admin-stat-rooms">0</strong></div>
+                    </div>
+
+                    <div class="admin-grid">
+                        <div class="admin-card">
+                            <h4>Usuarios</h4>
+                            <div class="inline-grid">
+                                <input id="admin-users-search" class="input" type="text" placeholder="Buscar por nombre o email">
+                                <button id="admin-users-refresh-btn" class="btn" type="button">Actualizar</button>
+                            </div>
+                            <div id="admin-users-list" class="list"></div>
+                        </div>
+
+                        <div class="admin-card">
+                            <h4>Salas Activas</h4>
+                            <div class="inline-grid">
+                                <input id="admin-rooms-search" class="input" type="text" placeholder="Código o nombre">
+                                <select id="admin-rooms-mode" class="input">
+                                    <option value="">Todos los modos</option>
+                                    <option value="online">Online</option>
+                                    <option value="vs">VS</option>
+                                    <option value="allvsbot">AllVsBot</option>
+                                </select>
+                                <select id="admin-rooms-status" class="input">
+                                    <option value="active_waiting">Activas/En espera</option>
+                                    <option value="active">Activas</option>
+                                    <option value="waiting">En espera</option>
+                                    <option value="finished">Finalizadas</option>
+                                </select>
+                                <button id="admin-rooms-refresh-btn" class="btn" type="button">Actualizar salas</button>
+                            </div>
+                            <div id="admin-rooms-list" class="list"></div>
+                        </div>
+                    </div>
+
+                    <div class="admin-card" style="margin-top:.75rem;">
+                        <h4>Espectador</h4>
+                        <div id="admin-spectate-box" class="admin-spectate-box muted">Selecciona una sala para espectar.</div>
+                    </div>
+                </div>
             </section>
         </main>
     </div>

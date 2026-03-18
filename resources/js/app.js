@@ -38,6 +38,7 @@ const i18n = {
         authErrorSocialiteMissing: 'Login con Google no disponible en servidor (falta Socialite).',
         authErrorGoogleRedirect: 'No se pudo iniciar login con Google.',
         authErrorGoogleCallback: 'Google devolvió error al finalizar login.',
+        authErrorAccountBanned: 'Esta cuenta está suspendida. Contacta a un administrador.',
         notifPlayerJoinedTitle: 'Nuevo jugador',
         notifPlayerJoinedBody: '{name} se unio a tu partida.',
         notifYourTurnTitle: 'Tu turno',
@@ -54,6 +55,7 @@ const i18n = {
         notifWinBody: 'Ganaste la partida.',
         notifLoseTitle: 'Partida finalizada',
         notifLoseBody: 'La partida termino. Ganador: {name}.',
+        notifResultClose: 'Cerrar',
     },
     en: {
         syncing: 'Syncing...',
@@ -84,6 +86,7 @@ const i18n = {
         authErrorSocialiteMissing: 'Google login is not available on server (Socialite missing).',
         authErrorGoogleRedirect: 'Could not start Google login.',
         authErrorGoogleCallback: 'Google returned an error while finishing login.',
+        authErrorAccountBanned: 'This account is suspended. Contact an administrator.',
         notifPlayerJoinedTitle: 'Player joined',
         notifPlayerJoinedBody: '{name} joined your match.',
         notifYourTurnTitle: 'Your turn',
@@ -100,6 +103,7 @@ const i18n = {
         notifWinBody: 'You won the match.',
         notifLoseTitle: 'Match ended',
         notifLoseBody: 'The match ended. Winner: {name}.',
+        notifResultClose: 'Close',
     },
 };
 
@@ -213,6 +217,20 @@ const allvsbotPublicRoomsList = document.getElementById('allvsbot-public-list');
 const refreshAllVsBotPublicBtn = document.getElementById('allvsbot-refresh-public-btn');
 const collectionSummary = document.getElementById('collection-summary');
 const collectionGrid = document.getElementById('collection-grid');
+const adminPanel = document.getElementById('admin-panel');
+const adminUsersSearch = document.getElementById('admin-users-search');
+const adminUsersRefreshBtn = document.getElementById('admin-users-refresh-btn');
+const adminUsersList = document.getElementById('admin-users-list');
+const adminRoomsRefreshBtn = document.getElementById('admin-rooms-refresh-btn');
+const adminRoomsList = document.getElementById('admin-rooms-list');
+const adminSpectateBox = document.getElementById('admin-spectate-box');
+const adminRoomsSearch = document.getElementById('admin-rooms-search');
+const adminRoomsMode = document.getElementById('admin-rooms-mode');
+const adminRoomsStatus = document.getElementById('admin-rooms-status');
+const adminStatUsers = document.getElementById('admin-stat-users');
+const adminStatAdmins = document.getElementById('admin-stat-admins');
+const adminStatBanned = document.getElementById('admin-stat-banned');
+const adminStatRooms = document.getElementById('admin-stat-rooms');
 
 function roomStateContainer(mode) {
     if (mode === 'online') return onlineStateBox;
@@ -239,6 +257,297 @@ for (const tab of tabButtons) {
 
 function t(key) {
     return i18n[state.language][key] || key;
+}
+
+function isAdminUser() {
+    return !!state.authUser?.is_admin;
+}
+
+function renderAdminPanelVisibility() {
+    if (!adminPanel) {
+        return;
+    }
+
+    if (!isAdminUser()) {
+        adminPanel.classList.add('hidden');
+        adminPanel.removeAttribute('data-loaded');
+        if (adminUsersList) {
+            adminUsersList.innerHTML = '';
+        }
+        if (adminRoomsList) {
+            adminRoomsList.innerHTML = '';
+        }
+        if (adminSpectateBox) {
+            adminSpectateBox.textContent = 'Selecciona una sala para espectar.';
+            adminSpectateBox.classList.add('muted');
+        }
+        return;
+    }
+
+    adminPanel.classList.remove('hidden');
+
+    if (adminPanel.dataset.loaded === '1') {
+        return;
+    }
+
+    adminPanel.dataset.loaded = '1';
+    loadAdminSummary().catch((error) => {
+        showToast({ title: 'Admin', body: error.message, tone: 'error' });
+    });
+    loadAdminUsers().catch((error) => {
+        showToast({ title: 'Admin', body: error.message, tone: 'error' });
+    });
+    loadAdminRooms().catch((error) => {
+        showToast({ title: 'Admin', body: error.message, tone: 'error' });
+    });
+}
+
+async function loadAdminSummary() {
+    if (!isAdminUser()) {
+        return;
+    }
+
+    const payload = await api('/admin/summary');
+    const summary = payload.summary || {};
+
+    if (adminStatUsers) adminStatUsers.textContent = String(summary.total_users ?? 0);
+    if (adminStatAdmins) adminStatAdmins.textContent = String(summary.total_admins ?? 0);
+    if (adminStatBanned) adminStatBanned.textContent = String(summary.banned_users ?? 0);
+    if (adminStatRooms) adminStatRooms.textContent = String(summary.active_rooms ?? 0);
+}
+
+async function loadAdminUsers(search = '') {
+    if (!isAdminUser()) {
+        return;
+    }
+
+    const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+    const payload = await api(`/admin/users${query}`);
+    const users = payload.users || [];
+
+    if (!adminUsersList) {
+        return;
+    }
+
+    if (!users.length) {
+        adminUsersList.innerHTML = '<p class="muted">No hay usuarios.</p>';
+        return;
+    }
+
+    adminUsersList.innerHTML = users.map((user) => `
+        <div class="admin-user-row" data-user-id="${user.id}">
+            <div class="admin-row-top">
+                <strong>${user.name}</strong>
+                <span class="pill">${user.is_banned ? 'BANEADO' : (user.is_admin ? 'ADMIN' : 'USER')}</span>
+            </div>
+            <div class="muted">${user.email}</div>
+            ${user.banned_reason ? `<div class="muted">Motivo: ${user.banned_reason}</div>` : ''}
+            <div class="admin-actions">
+                <button class="btn" type="button" data-action="admin-toggle" data-next-admin="${user.is_admin ? '0' : '1'}">${user.is_admin ? 'Quitar admin' : 'Hacer admin'}</button>
+                ${user.is_banned
+                    ? '<button class="btn" type="button" data-action="admin-unban">Desbanear</button>'
+                    : '<button class="btn btn-danger" type="button" data-action="admin-ban">Banear</button>'}
+                <input class="input" type="number" min="1" max="100" value="1" data-field="grant-count" title="Cantidad">
+                <select class="input" data-field="grant-rarity" title="Rareza">
+                    <option value="">Aleatoria</option>
+                    <option value="normal">Normal</option>
+                    <option value="rare">Rara</option>
+                    <option value="special">Especial</option>
+                    <option value="ultra">Ultra</option>
+                    <option value="mythic">Mítica</option>
+                    <option value="legendary">Legendaria</option>
+                    <option value="shiny">Shiny</option>
+                </select>
+                <button class="btn" type="button" data-action="admin-grant">Dar cápsulas</button>
+            </div>
+        </div>
+    `).join('');
+
+    adminUsersList.querySelectorAll('[data-action="admin-ban"]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const row = button.closest('.admin-user-row');
+            const userId = row?.dataset.userId;
+            if (!userId) return;
+
+            const reason = window.prompt('Motivo del baneo (opcional):', '') || '';
+
+            try {
+                await api(`/admin/users/${userId}/ban`, {
+                    method: 'POST',
+                    data: { reason },
+                });
+                showToast({ title: 'Admin', body: 'Usuario baneado.', tone: 'warning' });
+                await loadAdminUsers(adminUsersSearch?.value || '');
+                await loadAdminSummary();
+            } catch (error) {
+                showToast({ title: 'Admin', body: error.message, tone: 'error' });
+            }
+        });
+    });
+
+    adminUsersList.querySelectorAll('[data-action="admin-toggle"]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const row = button.closest('.admin-user-row');
+            const userId = row?.dataset.userId;
+            const nextAdmin = button.dataset.nextAdmin === '1';
+            if (!userId) return;
+
+            try {
+                await api(`/admin/users/${userId}/set-admin`, {
+                    method: 'POST',
+                    data: { is_admin: nextAdmin },
+                });
+                showToast({
+                    title: 'Admin',
+                    body: nextAdmin ? 'Usuario promovido a admin.' : 'Permisos admin removidos.',
+                    tone: 'success',
+                });
+                await loadAdminUsers(adminUsersSearch?.value || '');
+                await loadAdminSummary();
+            } catch (error) {
+                showToast({ title: 'Admin', body: error.message, tone: 'error' });
+            }
+        });
+    });
+
+    adminUsersList.querySelectorAll('[data-action="admin-unban"]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const row = button.closest('.admin-user-row');
+            const userId = row?.dataset.userId;
+            if (!userId) return;
+
+            try {
+                await api(`/admin/users/${userId}/unban`, { method: 'POST' });
+                showToast({ title: 'Admin', body: 'Usuario desbaneado.', tone: 'success' });
+                await loadAdminUsers(adminUsersSearch?.value || '');
+                await loadAdminSummary();
+            } catch (error) {
+                showToast({ title: 'Admin', body: error.message, tone: 'error' });
+            }
+        });
+    });
+
+    adminUsersList.querySelectorAll('[data-action="admin-grant"]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const row = button.closest('.admin-user-row');
+            const userId = row?.dataset.userId;
+            if (!row || !userId) return;
+
+            const count = Number(row.querySelector('[data-field="grant-count"]')?.value || 1);
+            const rarity = row.querySelector('[data-field="grant-rarity"]')?.value || '';
+
+            try {
+                await api(`/admin/users/${userId}/grant-capsules`, {
+                    method: 'POST',
+                    data: {
+                        count,
+                        rarity: rarity || null,
+                    },
+                });
+                showToast({ title: 'Admin', body: `Se otorgaron ${count} cápsulas.`, tone: 'success' });
+            } catch (error) {
+                showToast({ title: 'Admin', body: error.message, tone: 'error' });
+            }
+        });
+    });
+}
+
+async function loadAdminRooms() {
+    if (!isAdminUser()) {
+        return;
+    }
+
+    const params = new URLSearchParams();
+    const search = adminRoomsSearch?.value?.trim() || '';
+    const mode = adminRoomsMode?.value || '';
+    const status = adminRoomsStatus?.value || 'active_waiting';
+
+    if (search) params.set('search', search);
+    if (mode) params.set('mode', mode);
+    if (status) params.set('status', status);
+
+    const payload = await api(`/admin/rooms${params.toString() ? `?${params.toString()}` : ''}`);
+    const rooms = payload.rooms || [];
+
+    if (!adminRoomsList) {
+        return;
+    }
+
+    if (!rooms.length) {
+        adminRoomsList.innerHTML = '<p class="muted">No hay salas activas.</p>';
+        return;
+    }
+
+    adminRoomsList.innerHTML = rooms.map((room) => `
+        <div class="admin-room-row" data-room-code="${room.code}">
+            <div class="admin-row-top">
+                <strong>${room.room_name || room.code}</strong>
+                <span class="pill">${room.mode} · ${room.status} · ${room.players_count}p</span>
+            </div>
+            <div class="muted">Código: ${room.code} · Dificultad: ${room.difficulty}</div>
+            <div class="muted">Jugadores: ${(room.players || []).map((p) => `${p.nickname}(${p.role})`).join(', ') || '—'}</div>
+            <div class="admin-actions">
+                <button class="btn" type="button" data-action="admin-spectate">Espectar</button>
+                <button class="btn btn-danger" type="button" data-action="admin-close">Cerrar sala</button>
+            </div>
+        </div>
+    `).join('');
+
+    adminRoomsList.querySelectorAll('[data-action="admin-spectate"]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const row = button.closest('.admin-room-row');
+            const code = row?.dataset.roomCode;
+            if (!code) return;
+
+            try {
+                const payload = await api(`/admin/rooms/${code}/spectate`);
+                const room = payload.room;
+                if (!adminSpectateBox) return;
+
+                const lines = [
+                    `Sala ${room.code} (${room.mode})`,
+                    `Estado: ${room.status}`,
+                    `Turno: ${room.turn_session_id || '—'}`,
+                    `Ganador: ${room.winner_session_id || '—'}`,
+                    '',
+                    'Jugadores:',
+                    ...(room.players || []).map((p) => `- ${p.nickname} [${p.role}] hidden=${p.hidden_pokemon?.display_name || '—'}`),
+                    '',
+                    `Preguntas (${(room.questions || []).length}):`,
+                    ...(room.questions || []).slice(0, 25).map((q) => `- ${q.question_text} => ${q.answer || 'PENDIENTE'}`),
+                ];
+
+                adminSpectateBox.classList.remove('muted');
+                adminSpectateBox.textContent = lines.join('\n');
+            } catch (error) {
+                showToast({ title: 'Admin', body: error.message, tone: 'error' });
+            }
+        });
+    });
+
+    adminRoomsList.querySelectorAll('[data-action="admin-close"]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const row = button.closest('.admin-room-row');
+            const code = row?.dataset.roomCode;
+            if (!code) return;
+
+            const winnerSessionId = window.prompt('winner_session_id (opcional, vacío para cerrar sin ganador):', '') || '';
+
+            try {
+                await api(`/admin/rooms/${code}/close`, {
+                    method: 'POST',
+                    data: {
+                        winner_session_id: winnerSessionId || null,
+                    },
+                });
+                showToast({ title: 'Admin', body: 'Sala cerrada.', tone: 'warning' });
+                await loadAdminRooms();
+                await loadAdminSummary();
+            } catch (error) {
+                showToast({ title: 'Admin', body: error.message, tone: 'error' });
+            }
+        });
+    });
 }
 
 function localPokemonSprite(pokeapiId) {
@@ -315,6 +624,94 @@ function showToast({ title, body, tone = 'info', duration = 4200 }) {
     stack.appendChild(toast);
 
     setTimeout(remove, duration);
+}
+
+function ensureMatchResultOverlay() {
+    let overlay = document.getElementById('match-result-overlay');
+    if (overlay) {
+        return overlay;
+    }
+
+    overlay = document.createElement('div');
+    overlay.id = 'match-result-overlay';
+    overlay.className = 'match-result-overlay hidden';
+    overlay.innerHTML = `
+        <div class="match-result-backdrop" data-action="close-result"></div>
+        <div class="match-result-card">
+            <div class="match-result-burst" id="match-result-burst"></div>
+            <h2 id="match-result-title"></h2>
+            <p id="match-result-body"></p>
+            <button class="btn" type="button" id="match-result-close" data-action="close-result">${t('notifResultClose')}</button>
+        </div>
+    `;
+
+    overlay.querySelectorAll('[data-action="close-result"]').forEach((element) => {
+        element.addEventListener('click', () => {
+            overlay.classList.add('hidden');
+        });
+    });
+
+    document.body.appendChild(overlay);
+    return overlay;
+}
+
+function playOutcomeTone(outcome) {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) {
+            return;
+        }
+
+        const ctx = new AudioCtx();
+        const sequence = outcome === 'win'
+            ? [523, 659, 784, 988]
+            : [523, 392, 330, 262];
+
+        const start = ctx.currentTime;
+        sequence.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = outcome === 'win' ? 'square' : 'sawtooth';
+            osc.frequency.value = freq;
+            gain.gain.value = 0.0001;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            const t = start + i * 0.11;
+            gain.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+            osc.start(t);
+            osc.stop(t + 0.14);
+        });
+    } catch (error) {
+        // no-op
+    }
+}
+
+function showMatchResultOverlay({ title, body, outcome = 'win' }) {
+    const overlay = ensureMatchResultOverlay();
+    const titleNode = overlay.querySelector('#match-result-title');
+    const bodyNode = overlay.querySelector('#match-result-body');
+    const burstNode = overlay.querySelector('#match-result-burst');
+
+    overlay.classList.remove('hidden', 'match-result-win', 'match-result-lose');
+    overlay.classList.add(outcome === 'win' ? 'match-result-win' : 'match-result-lose');
+
+    if (titleNode) titleNode.textContent = title;
+    if (bodyNode) bodyNode.textContent = body;
+    if (burstNode) {
+        const icon = outcome === 'win' ? '★' : '✖';
+        burstNode.innerHTML = Array.from({ length: 16 }, (_, idx) => `<span style="--i:${idx}">${icon}</span>`).join('');
+    }
+
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(outcome === 'win' ? [140, 45, 140, 45, 180] : [220, 70, 220, 70, 220]);
+    }
+    playOutcomeTone(outcome);
+
+    clearTimeout(showMatchResultOverlay._timer);
+    showMatchResultOverlay._timer = setTimeout(() => {
+        overlay.classList.add('hidden');
+    }, 9000);
 }
 
 function myPlayerInRoom(room) {
@@ -417,13 +814,22 @@ function maybeNotifyRoomEvents(mode, previousRoom, currentRoom) {
     if (currentRoom.status === 'finished' && previousRoom.status !== 'finished') {
         const winner = currentPlayers.find((player) => player.session_id === currentRoom.winner_session_id);
         const iWon = winner && winner.session_id === me.session_id;
+        const resultTitle = iWon ? t('notifWinTitle') : t('notifLoseTitle');
+        const resultBody = iWon
+            ? t('notifWinBody')
+            : formatText(t('notifLoseBody'), { name: winner?.nickname || 'Jugador' });
+
         showToast({
-            title: iWon ? t('notifWinTitle') : t('notifLoseTitle'),
-            body: iWon
-                ? t('notifWinBody')
-                : formatText(t('notifLoseBody'), { name: winner?.nickname || 'Jugador' }),
+            title: resultTitle,
+            body: resultBody,
             tone: iWon ? 'success' : 'error',
             duration: 5200,
+        });
+
+        showMatchResultOverlay({
+            title: resultTitle,
+            body: resultBody,
+            outcome: iWon ? 'win' : 'lose',
         });
     }
 }
@@ -510,6 +916,7 @@ function renderAuthStatus() {
         authGoogleBtn?.classList.remove('hidden');
         // Show toggle text
         authLoginToggleText?.classList.remove('hidden');
+        renderAdminPanelVisibility();
         return;
     }
 
@@ -522,6 +929,7 @@ function renderAuthStatus() {
     if (authOr) authOr.style.display = 'none';
     authLoginToggleText?.classList.add('hidden');
     authRegisterToggleText?.classList.add('hidden');
+    renderAdminPanelVisibility();
 }
 
 async function loadAuthMe() {
@@ -612,6 +1020,7 @@ function consumeAuthFromUrl() {
             socialite_missing: t('authErrorSocialiteMissing'),
             google_redirect_failed: t('authErrorGoogleRedirect'),
             google_callback_failed: t('authErrorGoogleCallback'),
+            account_banned: t('authErrorAccountBanned'),
         };
         authStatus.textContent = map[authError] || authError;
     }
@@ -776,6 +1185,7 @@ function renderCollection() {
     if (!collection || !Array.isArray(collection.items) || !collection.items.length) {
         collectionSummary.textContent = 'Aún no tienes Pokémon en tu colección.';
         collectionGrid.innerHTML = '';
+        refreshVisiblePokedexCards();
         return;
     }
 
@@ -796,6 +1206,22 @@ function renderCollection() {
             showPokedexDetail(JSON.parse(detail));
         });
     });
+
+    refreshVisiblePokedexCards();
+}
+
+function refreshVisiblePokedexCards() {
+    if (!pokedexGrid || !pokedexGrid.children.length) {
+        return;
+    }
+
+    const existing = Array.from(pokedexGrid.querySelectorAll('.pokedex-card'))
+        .map((btn) => btn.dataset.pokemonDetail)
+        .filter(Boolean)
+        .map((value) => JSON.parse(value));
+
+    pokedexGrid.innerHTML = existing.map(pokedexCompactCardHtml).join('');
+    bindPokedexDetailClicks();
 }
 
 async function loadAchievements() {
@@ -820,6 +1246,7 @@ function rarityLabel(rarity) {
         rare: 'Raro',
         special: 'Especial',
         ultra: 'Ultra',
+        shiny: 'Shiny Ultra Raro',
         mythic: 'Mítico',
         legendary: 'Legendario',
     };
@@ -879,7 +1306,7 @@ function closeGachaCinematic() {
     gachaCinematic.style.display = 'none';
     gachaCinematicReveal.innerHTML = '';
     if (gachaCinematicCard) {
-        gachaCinematicCard.classList.remove('theme-normal', 'theme-rare', 'theme-special', 'theme-ultra', 'theme-mythic', 'theme-legendary', 'cinematic-shake');
+        gachaCinematicCard.classList.remove('theme-normal', 'theme-rare', 'theme-special', 'theme-ultra', 'theme-shiny', 'theme-mythic', 'theme-legendary', 'cinematic-shake');
         gachaCinematicCard.querySelector('.gacha-spark-burst')?.remove();
     }
 }
@@ -899,6 +1326,7 @@ function gachaThemeClass(rarity) {
         rare: 'theme-rare',
         special: 'theme-special',
         ultra: 'theme-ultra',
+        shiny: 'theme-shiny',
         mythic: 'theme-mythic',
         legendary: 'theme-legendary',
     };
@@ -919,6 +1347,7 @@ function playGachaTone(rarity) {
             rare: [392, 494, 523],
             special: [440, 523, 659],
             ultra: [494, 659, 784],
+            shiny: [659, 880, 988, 1319],
             mythic: [523, 659, 784, 988],
             legendary: [440, 659, 880, 1175],
         }[rarity] || [330, 392];
@@ -953,6 +1382,7 @@ function vibrateByRarity(rarity) {
         rare: [40, 20, 40],
         special: [55, 25, 55],
         ultra: [65, 30, 65, 25, 45],
+        shiny: [80, 28, 80, 28, 80, 28, 110],
         mythic: [75, 30, 75, 30, 75],
         legendary: [90, 35, 90, 35, 90],
     }[rarity] || [30];
@@ -966,6 +1396,7 @@ function sparkColorByRarity(rarity) {
         rare: '#60a5fa',
         special: '#818cf8',
         ultra: '#fbbf24',
+        shiny: '#22d3ee',
         mythic: '#e879f9',
         legendary: '#f87171',
     }[rarity] || '#cbd5e1';
@@ -1035,7 +1466,7 @@ async function animateGachaOpen(reward) {
     }
 
     if (gachaCinematicCard) {
-        gachaCinematicCard.classList.remove('theme-normal', 'theme-rare', 'theme-special', 'theme-ultra', 'theme-mythic', 'theme-legendary');
+        gachaCinematicCard.classList.remove('theme-normal', 'theme-rare', 'theme-special', 'theme-ultra', 'theme-shiny', 'theme-mythic', 'theme-legendary');
         gachaCinematicCard.classList.add(gachaThemeClass(reward.rarity), 'cinematic-shake');
         setTimeout(() => gachaCinematicCard.classList.remove('cinematic-shake'), 460);
     }
@@ -1206,12 +1637,37 @@ const pokedexDetail = document.getElementById('pokedex-detail');
 let pokedexOffset = 0;
 const pokedexPageSize = 60;
 
+function unlockedPokemonIds() {
+    const ids = new Set();
+    const items = state.collection?.items || [];
+
+    items.forEach((item) => {
+        const pokemon = item?.pokemon || {};
+        if (pokemon.id) {
+            ids.add(Number(pokemon.id));
+        }
+        if (pokemon.pokeapi_id) {
+            ids.add(`pokeapi:${Number(pokemon.pokeapi_id)}`);
+        }
+    });
+
+    return ids;
+}
+
+function isPokemonUnlocked(pokemon) {
+    const ids = unlockedPokemonIds();
+    return ids.has(Number(pokemon.id)) || ids.has(`pokeapi:${Number(pokemon.pokeapi_id)}`);
+}
+
 function pokedexCompactCardHtml(pokemon) {
-    const sprite = pokemonSpriteUrl(pokemon);
-    return `<button type="button" class="pokedex-card" data-pokemon-detail='${JSON.stringify(pokemon).replace(/'/g, '&#39;')}'>
-        <img src="${sprite}" alt="${pokemon.display_name}" loading="lazy">
+    const unlocked = isPokemonUnlocked(pokemon);
+    const sprite = unlocked ? pokemonSpriteUrl(pokemon) : '';
+    return `<button type="button" class="pokedex-card ${unlocked ? '' : 'pokedex-card-locked'}" data-unlocked="${unlocked ? '1' : '0'}" data-pokemon-detail='${JSON.stringify(pokemon).replace(/'/g, '&#39;')}'>
+        ${unlocked
+            ? `<img src="${sprite}" alt="${pokemon.display_name}" loading="lazy">`
+            : '<div class="pokedex-unknown" aria-label="Pokémon no desbloqueado">?</div>'}
         <span class="pokedex-card-num">#${pokemon.pokeapi_id}</span>
-        <span class="pokedex-card-name">${pokemon.display_name}</span>
+        <span class="pokedex-card-name">${unlocked ? pokemon.display_name : '???'}</span>
     </button>`;
 }
 
@@ -1247,6 +1703,21 @@ function bindPokedexDetailClicks() {
     pokedexGrid.querySelectorAll('.pokedex-card').forEach((btn) => {
         btn.onclick = () => {
             const pokemon = JSON.parse(btn.dataset.pokemonDetail);
+            if (btn.dataset.unlocked !== '1') {
+                pokedexDetail.classList.remove('hidden');
+                pokedexDetail.innerHTML = `
+                    <div class="pokedex-detail-inner pokedex-detail-locked">
+                        <button type="button" class="pokedex-detail-close" id="pokedex-detail-close">&times;</button>
+                        <div class="pokedex-unknown big">?</div>
+                        <h3>Pokémon no desbloqueado</h3>
+                        <p class="muted">Abre cápsulas y completa logros para revelar su sprite y datos.</p>
+                    </div>
+                `;
+                document.getElementById('pokedex-detail-close').addEventListener('click', () => {
+                    pokedexDetail.classList.add('hidden');
+                });
+                return;
+            }
             showPokedexDetail(pokemon);
         };
     });
@@ -1866,6 +2337,16 @@ localEvaluateBtn.addEventListener('click', evaluateLocalQuestion);
 refreshOnlinePublicBtn.addEventListener('click', () => loadPublicRooms('online'));
 refreshVsPublicBtn.addEventListener('click', () => loadPublicRooms('vs'));
 refreshAllVsBotPublicBtn?.addEventListener('click', () => loadPublicRooms('allvsbot'));
+adminUsersRefreshBtn?.addEventListener('click', () => loadAdminUsers(adminUsersSearch?.value || ''));
+adminRoomsRefreshBtn?.addEventListener('click', () => loadAdminRooms());
+adminUsersSearch?.addEventListener('input', debounce(() => {
+    loadAdminUsers(adminUsersSearch.value || '');
+}, 320));
+adminRoomsSearch?.addEventListener('input', debounce(() => {
+    loadAdminRooms();
+}, 320));
+adminRoomsMode?.addEventListener('change', () => loadAdminRooms());
+adminRoomsStatus?.addEventListener('change', () => loadAdminRooms());
 
 languageSelect.addEventListener('change', async () => {
     setLanguage(languageSelect.value);
@@ -2025,6 +2506,11 @@ setInterval(async () => {
         }
 
         await loadAllPublicRooms();
+
+        if (isAdminUser()) {
+            await loadAdminRooms();
+            await loadAdminSummary();
+        }
     } catch (error) {
         // polling silencioso
     }

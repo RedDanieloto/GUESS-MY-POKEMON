@@ -15,22 +15,55 @@ class GachaController extends Controller
         return auth('sanctum')->user() ?: $request->user();
     }
 
+    private function playerTokenFromRequest(Request $request): string
+    {
+        return trim((string) ($request->input('player_token') ?: $request->query('player_token', '')));
+    }
+
     /**
      * Resolve profile from authenticated user or player_token
      */
     private function resolveProfile(Request $request): ?PlayerProfile
     {
-        // If user is authenticated, get their profile
-        if ($user = $this->resolveApiUser($request)) {
-            return PlayerProfile::query()->where('user_id', $user->id)->first();
+        $playerToken = $this->playerTokenFromRequest($request);
+
+        // Prefer the active player token profile when available to avoid session/profile drift.
+        if ($playerToken !== '') {
+            $tokenProfile = PlayerProfile::query()->where('session_id', $playerToken)->first();
+            if ($tokenProfile) {
+                if ($user = $this->resolveApiUser($request)) {
+                    if ($tokenProfile->user_id === null || (int) $tokenProfile->user_id === (int) $user->id) {
+                        if ($tokenProfile->user_id === null) {
+                            $tokenProfile->user_id = $user->id;
+                            $tokenProfile->save();
+                        }
+
+                        return $tokenProfile;
+                    }
+
+                    return PlayerProfile::query()
+                        ->where('user_id', $user->id)
+                        ->latest('updated_at')
+                        ->first();
+                }
+
+                return $tokenProfile;
+            }
         }
 
-        // Otherwise, use player_token
-        $validated = $request->validate([
-            'player_token' => ['required', 'string', 'max:64'],
-        ]);
+        // If authenticated and no usable token profile, use the most recent profile linked to user.
+        if ($user = $this->resolveApiUser($request)) {
+            return PlayerProfile::query()
+                ->where('user_id', $user->id)
+                ->latest('updated_at')
+                ->first();
+        }
 
-        return PlayerProfile::query()->where('session_id', $validated['player_token'])->first();
+        if ($playerToken === '') {
+            return null;
+        }
+
+        return PlayerProfile::query()->where('session_id', $playerToken)->first();
     }
 
     public function index(Request $request, GachaService $gachaService): JsonResponse
