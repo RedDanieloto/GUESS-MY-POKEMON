@@ -107,25 +107,42 @@ class AdminController extends Controller
         ]);
 
         $user = User::query()->findOrFail($userId);
-        $profile = PlayerProfile::query()->firstOrCreate(
-            ['user_id' => $user->id],
-            [
-                'session_id' => (string) Str::uuid(),
-                'nickname' => $user->name,
-                'experience_tier' => 'beginner',
-                'meta' => ['avatar_key' => 'trainer-a'],
-            ]
-        );
+        $profiles = PlayerProfile::query()
+            ->where('user_id', $user->id)
+            ->orderByDesc('updated_at')
+            ->get();
+
+        if ($profiles->isEmpty()) {
+            $profiles = collect([
+                PlayerProfile::query()->create([
+                    'user_id' => $user->id,
+                    'session_id' => (string) Str::uuid(),
+                    'nickname' => $user->name,
+                    'experience_tier' => 'beginner',
+                    'meta' => ['avatar_key' => 'trainer-a'],
+                ]),
+            ]);
+        }
 
         $count = (int) ($validated['count'] ?? 1);
         $rarity = $validated['rarity'] ?? null;
-        $gachaService->grantAdminRewards($profile, $count, $rarity);
+
+        foreach ($profiles as $profile) {
+            $gachaService->grantAdminRewards($profile, $count, $rarity);
+        }
+
+        $primaryProfile = $profiles->first();
+        $pendingCount = $primaryProfile
+            ? $primaryProfile->gachaRewards()->where('is_opened', false)->count()
+            : 0;
 
         return response()->json([
             'message' => 'Cápsulas otorgadas',
             'granted' => $count,
             'rarity' => $rarity,
-            'profile_id' => $profile->id,
+            'profiles_affected' => $profiles->count(),
+            'profile_id' => $primaryProfile?->id,
+            'pending_count' => $pendingCount,
         ]);
     }
 

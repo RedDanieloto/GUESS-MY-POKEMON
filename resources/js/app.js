@@ -437,14 +437,23 @@ async function loadAdminUsers(search = '') {
             const rarity = row.querySelector('[data-field="grant-rarity"]')?.value || '';
 
             try {
-                await api(`/admin/users/${userId}/grant-capsules`, {
+                const payload = await api(`/admin/users/${userId}/grant-capsules`, {
                     method: 'POST',
                     data: {
                         count,
                         rarity: rarity || null,
                     },
                 });
-                showToast({ title: 'Admin', body: `Se otorgaron ${count} cápsulas.`, tone: 'success' });
+
+                if (Number(userId) === Number(state.authUser?.id)) {
+                    await loadGacha();
+                }
+
+                showToast({
+                    title: 'Admin',
+                    body: `Se otorgaron ${count} cápsulas.${payload?.pending_count !== undefined ? ` Pendientes: ${payload.pending_count}` : ''}`,
+                    tone: 'success',
+                });
             } catch (error) {
                 showToast({ title: 'Admin', body: error.message, tone: 'error' });
             }
@@ -2539,6 +2548,10 @@ setInterval(async () => {
         }
 
         await loadAllPublicRooms();
+
+        if (state.authToken || state.playerToken) {
+            await loadGacha();
+        }
 
         if (isAdminUser()) {
             await loadAdminRooms();
