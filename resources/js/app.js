@@ -992,20 +992,53 @@ async function loginAuth() {
 
 async function logoutAuth() {
     try {
-        await api('/auth/logout', { method: 'POST', auth: true });
+        if (state.authToken) {
+            await api('/auth/logout', { method: 'POST' });
+        }
     } catch (error) {
         // noop
     }
 
     setAuthToken('');
+    state.playerToken = '';
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(onlineRoomKey);
+    localStorage.removeItem(vsRoomKey);
+    localStorage.removeItem(allvsbotRoomKey);
+    updateGoogleAuthLink();
+
     state.authUser = null;
+    state.profile = null;
+    state.onlineRoom = null;
+    state.vsRoom = null;
+    state.allvsbotRoom = null;
+    state.onlineRoomCode = '';
+    state.vsRoomCode = '';
+    state.allvsbotRoomCode = '';
     state.achievements = null;
     state.gacha = null;
     state.collection = null;
+
+    [onlineStateBox, vsStateBox, allvsbotStateBox].forEach((box) => {
+        if (!box) return;
+        box.classList.add('hidden');
+        box.innerHTML = '';
+    });
+
     renderAuthStatus();
+    updateProfileCard();
+    renderProfileHud();
     renderAchievements();
     renderGacha();
     renderCollection();
+
+    showToast({
+        title: state.language === 'en' ? 'Signed out' : 'Sesión cerrada',
+        body: state.language === 'en'
+            ? 'Your account session was closed correctly.'
+            : 'Tu sesión se cerró correctamente.',
+        tone: 'success',
+    });
 }
 
 function consumeAuthFromUrl() {
