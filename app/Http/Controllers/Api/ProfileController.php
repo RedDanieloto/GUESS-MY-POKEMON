@@ -107,43 +107,48 @@ class ProfileController extends Controller
     public function show(Request $request, ProgressionService $progressionService): JsonResponse
     {
         $playerToken = $this->playerTokenFromRequest($request);
+        $authUser = $this->resolveApiUser($request);
 
         if ($playerToken !== '') {
             $tokenProfile = PlayerProfile::query()->where('session_id', $playerToken)->first();
             if ($tokenProfile) {
-                if ($user = $this->resolveApiUser($request)) {
-                    if ($tokenProfile->user_id === null || (int) $tokenProfile->user_id === (int) $user->id) {
+                if ($authUser) {
+                    if ($tokenProfile->user_id === null || (int) $tokenProfile->user_id === (int) $authUser->id) {
                         if ($tokenProfile->user_id === null) {
-                            $tokenProfile->user_id = $user->id;
+                            $tokenProfile->user_id = $authUser->id;
                             $tokenProfile->save();
                         }
+                    } else {
+                        $tokenProfile = null;
                     }
                 }
 
-                return response()->json([
-                    'player_token' => $tokenProfile->session_id,
-                    'profile' => [
-                        ...$progressionService->profilePayload($tokenProfile),
-                        'avatar_key' => $tokenProfile->meta['avatar_key'] ?? 'trainer-a',
-                    ],
-                    'avatar_catalog' => self::avatarCatalog(),
-                ]);
+                if (! $tokenProfile) {
+                    // Ignore stale token profile from another account.
+                } else {
+                    return response()->json([
+                        'player_token' => $tokenProfile->session_id,
+                        'profile' => [
+                            ...$progressionService->profilePayload($tokenProfile),
+                            'avatar_key' => $tokenProfile->meta['avatar_key'] ?? 'trainer-a',
+                        ],
+                        'avatar_catalog' => self::avatarCatalog(),
+                    ]);
+                }
             }
         }
 
         // If user is authenticated, show their profile
-        if ($user = $this->resolveApiUser($request)) {
-            $profile = PlayerProfile::query()
-                ->where('user_id', $user->id)
-                ->latest('updated_at')
-                ->first();
-
-            if (! $profile) {
-                return response()->json([
-                    'profile' => null,
-                    'avatar_catalog' => self::avatarCatalog(),
-                ]);
-            }
+        if ($authUser) {
+            $profile = PlayerProfile::query()->firstOrCreate(
+                ['user_id' => $authUser->id],
+                [
+                    'session_id' => (string) Str::uuid(),
+                    'nickname' => $authUser->name,
+                    'experience_tier' => 'beginner',
+                    'meta' => ['avatar_key' => 'trainer-a'],
+                ]
+            );
 
             return response()->json([
                 'player_token' => $profile->session_id,

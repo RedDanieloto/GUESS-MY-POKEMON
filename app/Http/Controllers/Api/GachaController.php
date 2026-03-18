@@ -7,9 +7,23 @@ use App\Models\PlayerProfile;
 use App\Services\GachaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class GachaController extends Controller
 {
+        private function ensureUserProfile($user): PlayerProfile
+        {
+            return PlayerProfile::query()->firstOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'session_id' => (string) Str::uuid(),
+                    'nickname' => $user->name,
+                    'experience_tier' => 'beginner',
+                    'meta' => ['avatar_key' => 'trainer-a'],
+                ]
+            );
+        }
+
     private function resolveApiUser(Request $request)
     {
         return auth('sanctum')->user() ?: $request->user();
@@ -41,10 +55,7 @@ class GachaController extends Controller
                         return $tokenProfile;
                     }
 
-                    return PlayerProfile::query()
-                        ->where('user_id', $user->id)
-                        ->latest('updated_at')
-                        ->first();
+                    return $this->ensureUserProfile($user);
                 }
 
                 return $tokenProfile;
@@ -53,10 +64,7 @@ class GachaController extends Controller
 
         // If authenticated and no usable token profile, use the most recent profile linked to user.
         if ($user = $this->resolveApiUser($request)) {
-            return PlayerProfile::query()
-                ->where('user_id', $user->id)
-                ->latest('updated_at')
-                ->first();
+            return $this->ensureUserProfile($user);
         }
 
         if ($playerToken === '') {
