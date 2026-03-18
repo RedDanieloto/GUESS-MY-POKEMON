@@ -96,6 +96,30 @@ class GachaService
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function collectionView(PlayerProfile $profile): array
+    {
+        $opened = PlayerGachaReward::query()
+            ->with('pokemon:id,display_name,pokeapi_id,sprites,primary_type,secondary_type')
+            ->where('player_profile_id', $profile->id)
+            ->where('is_opened', true)
+            ->latest('opened_at')
+            ->get();
+
+        $unique = $opened
+            ->filter(fn (PlayerGachaReward $reward) => (bool) $reward->pokemon_id)
+            ->unique('pokemon_id')
+            ->values();
+
+        return [
+            'total_opened' => $opened->count(),
+            'unique_pokemon' => $unique->count(),
+            'items' => $unique->map(fn (PlayerGachaReward $reward): array => $this->rewardPayload($reward))->all(),
+        ];
+    }
+
     public function openNext(PlayerProfile $profile): ?PlayerGachaReward
     {
         $reward = PlayerGachaReward::query()

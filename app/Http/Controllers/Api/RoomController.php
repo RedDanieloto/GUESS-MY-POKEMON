@@ -21,13 +21,14 @@ class RoomController extends Controller
     public function create(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'mode' => ['required', 'in:online,vs'],
+            'mode' => ['required', 'in:online,vs,allvsbot'],
             'difficulty' => ['required', 'in:easy,normal,hard'],
             'nickname' => ['required', 'string', 'min:2', 'max:40'],
             'visibility' => ['nullable', 'in:public,private'],
             'room_name' => ['nullable', 'string', 'max:60'],
             'language' => ['nullable', 'in:es,en'],
             'player_token' => ['nullable', 'string', 'max:64'],
+            'question_limit_per_player' => ['nullable', 'integer', 'min:1', 'max:20'],
         ]);
 
         $sessionId = $this->resolveSessionId($validated['player_token'] ?? null);
@@ -41,6 +42,10 @@ class RoomController extends Controller
             $difficulty = 'hard';
         }
 
+        if ($mode === 'allvsbot' && $difficulty === 'hard') {
+            $difficulty = 'normal';
+        }
+
         $visibility = $validated['visibility'] ?? 'private';
 
         $room = GameRoom::query()->create([
@@ -52,7 +57,9 @@ class RoomController extends Controller
             'language' => $validated['language'] ?? 'es',
             'status' => 'waiting',
             'host_session_id' => $sessionId,
-            'turn_session_id' => $mode === 'vs' ? $sessionId : null,
+            'turn_session_id' => in_array($mode, ['vs', 'allvsbot'], true) ? $sessionId : null,
+            'bot_pokemon_id' => $mode === 'allvsbot' ? Pokemon::query()->inRandomOrder()->value('id') : null,
+            'question_limit_per_player' => $mode === 'allvsbot' ? (int) ($validated['question_limit_per_player'] ?? 3) : null,
         ]);
 
         RoomPlayer::query()->create([
@@ -74,9 +81,10 @@ class RoomController extends Controller
     {
         $mode = (string) $request->query('mode', 'online');
         $language = $request->query('lang', 'es') === 'en' ? 'en' : 'es';
+        $modeFilter = in_array($mode, ['online', 'vs', 'allvsbot'], true) ? $mode : 'online';
 
         $rooms = GameRoom::query()
-            ->where('mode', $mode === 'vs' ? 'vs' : 'online')
+            ->where('mode', $modeFilter)
             ->where('visibility', 'public')
             ->whereIn('status', ['waiting', 'active'])
             ->latest()
@@ -85,7 +93,7 @@ class RoomController extends Controller
 
         $payload = $rooms->map(function (GameRoom $room) use ($language): array {
             $playersCount = RoomPlayer::query()->where('game_room_id', $room->id)->count();
-            $maxPlayers = $room->mode === 'online' ? 4 : 2;
+            $maxPlayers = in_array($room->mode, ['online', 'allvsbot'], true) ? 4 : 2;
 
             return [
                 'code' => $room->code,
@@ -98,6 +106,7 @@ class RoomController extends Controller
                 'players_count' => $playersCount,
                 'max_players' => $maxPlayers,
                 'is_joinable' => $playersCount < $maxPlayers && $room->status !== 'finished',
+                'question_limit_per_player' => $room->question_limit_per_player,
                 'type_labels' => QuestionCatalog::typeLabels($language),
             ];
         });
@@ -133,13 +142,23 @@ class RoomController extends Controller
             ]);
         }
 
-        $maxPlayers = $room->mode === 'online' ? 4 : 2;
+        $maxPlayers = in_array($room->mode, ['online', 'allvsbot'], true) ? 4 : 2;
         $currentPlayers = RoomPlayer::query()->where('game_room_id', $room->id)->count();
         if ($currentPlayers >= $maxPlayers) {
             return response()->json(['message' => 'La sala ya está llena'], 422);
         }
 
-        $role = $room->mode === 'online' ? 'guesser' : 'player2';
+        if ($room->mode === 'online') {
+            $role = 'guesser';
+        } elseif ($room->mode === 'allvsbot') {
+            $role = match ($currentPlayers + 1) {
+                2 => 'player2',
+                3 => 'player3',
+                default => 'player4',
+            };
+        } else {
+            $role = 'player2';
+        }
 
         RoomPlayer::query()->create([
             'game_room_id' => $room->id,
@@ -150,8 +169,17 @@ class RoomController extends Controller
         ]);
         $this->ensureProfile($sessionId, $validated['nickname']);
 
-        $room->status = 'active';
-        $room->save();
+        if ($room->mode === 'allvsbot') {
+            // Start the match when at least 2 players are present.
+            if (($currentPlayers + 1) >= 2) {
+                $room->status = 'active';
+                $room->turn_session_id = $room->turn_session_id ?: $room->host_session_id;
+                $room->save();
+            }
+        } else {
+            $room->status = 'active';
+            $room->save();
+        }
 
         return response()->json([
             'player_token' => $sessionId,
@@ -236,6 +264,10 @@ class RoomController extends Controller
             return response()->json(['message' => 'No es tu turno para preguntar'], 403);
         }
 
+        if ($room->mode === 'allvsbot' && $room->turn_session_id !== $player->session_id) {
+            return response()->json(['message' => 'No es tu turno para preguntar'], 403);
+        }
+
         $questionKey = $validated['question_key'] ?? null;
         $text = trim((string) ($validated['question_text'] ?? ''));
 
@@ -247,6 +279,23 @@ class RoomController extends Controller
             return response()->json(['message' => 'Pregunta estructurada inválida'], 422);
         }
 
+        if ($room->mode === 'allvsbot' && ! $questionKey) {
+            return response()->json(['message' => 'En allvsbot solo se permiten preguntas estructuradas'], 422);
+        }
+
+        if ($room->mode === 'allvsbot') {
+            $limit = max(1, (int) ($room->question_limit_per_player ?? 3));
+            $used = RoomQuestion::query()
+                ->where('game_room_id', $room->id)
+                ->where('asked_by_session_id', $player->session_id)
+                ->where('meta->kind', 'question')
+                ->count();
+
+            if ($used >= $limit) {
+                return response()->json(['message' => 'Ya usaste todas tus preguntas disponibles'], 422);
+            }
+        }
+
         if ($questionKey) {
             $text = QuestionCatalog::labelFor($questionKey, $validated['lang'] ?? $room->language ?? 'es')
                 ?? $questionCatalog[$questionKey]['label'];
@@ -256,7 +305,12 @@ class RoomController extends Controller
 
         // Auto-evaluate structured questions using the hidden Pokémon
         $autoAnswer = null;
-        if ($questionKey && $target && $target->hidden_pokemon_id) {
+        if ($room->mode === 'allvsbot' && $questionKey && $room->bot_pokemon_id) {
+            $hiddenPokemon = Pokemon::query()->find($room->bot_pokemon_id);
+            if ($hiddenPokemon) {
+                $autoAnswer = QuestionEvaluator::evaluate($questionKey, $hiddenPokemon);
+            }
+        } elseif ($questionKey && $target && $target->hidden_pokemon_id) {
             $hiddenPokemon = $target->hiddenPokemon;
             if ($hiddenPokemon) {
                 $autoAnswer = QuestionEvaluator::evaluate($questionKey, $hiddenPokemon);
@@ -280,11 +334,15 @@ class RoomController extends Controller
             $this->incrementProfileStat($target->session_id, 'questions_answered', 1);
             $this->awardExperience($target->session_id, $room, 6);
 
-            // In VS mode, pass the turn after auto-answer
-            if ($room->mode === 'vs' && $room->status === 'active') {
+            // In VS/allvsbot mode, pass the turn after auto-answer
+            if (in_array($room->mode, ['vs', 'allvsbot'], true) && $room->status === 'active') {
                 $room->turn_session_id = $target->session_id;
                 $room->save();
             }
+        }
+
+        if ($room->mode === 'allvsbot' && $room->status === 'active') {
+            $this->advanceAllVsBotTurn($room, $player->session_id);
         }
 
         return response()->json([
@@ -349,18 +407,28 @@ class RoomController extends Controller
             return response()->json(['message' => 'No es tu turno para adivinar'], 403);
         }
 
+        if ($room->mode === 'allvsbot' && $room->turn_session_id !== $player->session_id) {
+            return response()->json(['message' => 'No es tu turno para adivinar'], 403);
+        }
+
         $target = $this->targetPlayerForQuestion($room, $player);
-        if (! $target || ! $target->hidden_pokemon_id) {
+        if ($room->mode === 'allvsbot') {
+            if (! $room->bot_pokemon_id) {
+                return response()->json(['message' => 'La partida no tiene Pokémon objetivo'], 422);
+            }
+        } elseif (! $target || ! $target->hidden_pokemon_id) {
             return response()->json(['message' => 'El rival todavía no eligió su Pokémon'], 422);
         }
 
         $guessPokemon = Pokemon::query()->findOrFail((int) $validated['pokemon_id']);
-        $correct = $target->hidden_pokemon_id === (int) $validated['pokemon_id'];
+        $correct = $room->mode === 'allvsbot'
+            ? ((int) $room->bot_pokemon_id === (int) $validated['pokemon_id'])
+            : ($target->hidden_pokemon_id === (int) $validated['pokemon_id']);
 
         RoomQuestion::query()->create([
             'game_room_id' => $room->id,
             'asked_by_session_id' => $player->session_id,
-            'target_session_id' => $target->session_id,
+            'target_session_id' => $target?->session_id,
             'question_text' => 'Adivino: '.$guessPokemon->display_name,
             'answer' => $correct ? 'yes' : 'no',
             'answered_at' => now(),
@@ -382,6 +450,9 @@ class RoomController extends Controller
             $room->turn_session_id = $target->session_id;
             $room->save();
             $this->awardExperience($player->session_id, $room, 10);
+        } elseif ($room->mode === 'allvsbot' && $room->status === 'active') {
+            $this->awardExperience($player->session_id, $room, 10);
+            $this->advanceAllVsBotTurn($room, $player->session_id);
         }
 
         return response()->json([
@@ -437,6 +508,11 @@ class RoomController extends Controller
 
         $player = $this->roomPlayerOrFail($room, $validated['player_token']);
 
+        $playersCount = RoomPlayer::query()->where('game_room_id', $room->id)->count();
+        if ($playersCount !== 2) {
+            return response()->json(['message' => 'El reloj solo está disponible en partidas de 2 jugadores'], 422);
+        }
+
         if ($room->timer_enabled) {
             return response()->json(['message' => 'El reloj ya está activo'], 422);
         }
@@ -463,6 +539,11 @@ class RoomController extends Controller
         }
 
         $player = $this->roomPlayerOrFail($room, $validated['player_token']);
+
+        $playersCount = RoomPlayer::query()->where('game_room_id', $room->id)->count();
+        if ($playersCount !== 2) {
+            return response()->json(['message' => 'El reloj solo está disponible en partidas de 2 jugadores'], 422);
+        }
 
         if ($room->timer_enabled) {
             return response()->json(['message' => 'El reloj ya está activo'], 422);
@@ -505,7 +586,7 @@ class RoomController extends Controller
         }
 
         $players = RoomPlayer::query()->where('game_room_id', $room->id)->orderBy('id')->get();
-        if ($players->count() < 2) {
+        if ($players->count() !== 2) {
             return;
         }
 
@@ -583,6 +664,7 @@ class RoomController extends Controller
             'id' => $room->id,
             'code' => $room->code,
             'mode' => $room->mode,
+            'max_players' => in_array($room->mode, ['online', 'allvsbot'], true) ? 4 : 2,
             'difficulty' => $room->difficulty,
             'visibility' => $room->visibility,
             'room_name' => $room->room_name,
@@ -600,6 +682,14 @@ class RoomController extends Controller
             'remaining_hint' => $me ? $this->remainingHint($room, $me) : null,
             'pokedex_loaded' => Pokemon::query()->count(),
             'my_profile' => $this->profilePayloadFor($sessionId),
+            'allvsbot' => $room->mode === 'allvsbot' ? [
+                'question_limit_per_player' => (int) ($room->question_limit_per_player ?? 3),
+                'my_questions_used' => RoomQuestion::query()
+                    ->where('game_room_id', $room->id)
+                    ->where('asked_by_session_id', $sessionId)
+                    ->where('meta->kind', 'question')
+                    ->count(),
+            ] : null,
             'timer' => [
                 'enabled' => (bool) $room->timer_enabled,
                 'seconds' => (int) $room->timer_seconds,
@@ -617,16 +707,18 @@ class RoomController extends Controller
             return null;
         }
 
-        $target = $this->targetPlayerForQuestion($room, $me);
-        if (! $target) {
-            return null;
-        }
-
         $answersQuery = RoomQuestion::query()
             ->where('game_room_id', $room->id)
-            ->where('target_session_id', $target->session_id)
             ->whereNotNull('question_key')
             ->whereIn('answer', ['yes', 'no']);
+
+        if ($room->mode !== 'allvsbot') {
+            $target = $this->targetPlayerForQuestion($room, $me);
+            if (! $target) {
+                return null;
+            }
+            $answersQuery->where('target_session_id', $target->session_id);
+        }
 
         if ($room->mode === 'vs') {
             $answersQuery->where('asked_by_session_id', $me->session_id);
@@ -699,10 +791,37 @@ class RoomController extends Controller
                 ->first();
         }
 
+        if ($room->mode === 'allvsbot') {
+            return $source;
+        }
+
         return RoomPlayer::query()
             ->where('game_room_id', $room->id)
             ->where('session_id', '!=', $source->session_id)
             ->first();
+    }
+
+    private function advanceAllVsBotTurn(GameRoom $room, string $currentSessionId): void
+    {
+        $players = RoomPlayer::query()
+            ->where('game_room_id', $room->id)
+            ->orderBy('id')
+            ->get();
+
+        if ($players->count() < 2) {
+            return;
+        }
+
+        $index = $players->search(fn (RoomPlayer $player) => $player->session_id === $currentSessionId);
+        if ($index === false) {
+            $room->turn_session_id = $players->first()->session_id;
+            $room->save();
+            return;
+        }
+
+        $nextIndex = ($index + 1) % $players->count();
+        $room->turn_session_id = $players[$nextIndex]->session_id;
+        $room->save();
     }
 
     private function ensureProfile(string $sessionId, ?string $nickname = null): PlayerProfile

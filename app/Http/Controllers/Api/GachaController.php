@@ -10,13 +10,18 @@ use Illuminate\Http\Request;
 
 class GachaController extends Controller
 {
+    private function resolveApiUser(Request $request)
+    {
+        return auth('sanctum')->user() ?: $request->user();
+    }
+
     /**
      * Resolve profile from authenticated user or player_token
      */
     private function resolveProfile(Request $request): ?PlayerProfile
     {
         // If user is authenticated, get their profile
-        if ($user = $request->user()) {
+        if ($user = $this->resolveApiUser($request)) {
             return PlayerProfile::query()->where('user_id', $user->id)->first();
         }
 
@@ -38,6 +43,7 @@ class GachaController extends Controller
 
         return response()->json([
             'gacha' => $gachaService->queueView($profile),
+            'collection' => $gachaService->collectionView($profile),
         ]);
     }
 
@@ -58,6 +64,7 @@ class GachaController extends Controller
         return response()->json([
             'reward' => $gachaService->rewardPayload($reward),
             'gacha' => $gachaService->queueView($profile),
+            'collection' => $gachaService->collectionView($profile),
         ]);
     }
 }

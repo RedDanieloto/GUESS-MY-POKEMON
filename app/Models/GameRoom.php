@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GameRoom extends Model
@@ -21,6 +22,8 @@ class GameRoom extends Model
         'host_session_id',
         'turn_session_id',
         'winner_session_id',
+        'bot_pokemon_id',
+        'question_limit_per_player',
         'timer_enabled',
         'timer_seconds',
         'timer_p1_remaining',
@@ -33,7 +36,13 @@ class GameRoom extends Model
     protected $casts = [
         'timer_enabled' => 'boolean',
         'timer_last_tick' => 'datetime',
+        'question_limit_per_player' => 'integer',
     ];
+
+    public function botPokemon(): BelongsTo
+    {
+        return $this->belongsTo(Pokemon::class, 'bot_pokemon_id');
+    }
 
     public function players(): HasMany
     {

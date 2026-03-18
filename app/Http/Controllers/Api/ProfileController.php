@@ -12,13 +12,18 @@ use Illuminate\Support\Str;
 
 class ProfileController extends Controller
 {
+    private function resolveApiUser(Request $request)
+    {
+        return auth('sanctum')->user() ?: $request->user();
+    }
+
     /**
      * Resolve the player profile from either authenticated user or player_token
      */
     private function resolveProfile(Request $request): ?PlayerProfile
     {
         // If user is authenticated, get or create their profile
-        if ($user = $request->user()) {
+        if ($user = $this->resolveApiUser($request)) {
             return PlayerProfile::query()->firstOrCreate(
                 ['user_id' => $user->id],
                 [
@@ -45,7 +50,7 @@ class ProfileController extends Controller
         ]);
 
         // If user is authenticated, use their profile
-        if ($user = $request->user()) {
+        if ($user = $this->resolveApiUser($request)) {
             $profile = PlayerProfile::query()->firstOrCreate(
                 ['user_id' => $user->id],
                 [
@@ -97,7 +102,7 @@ class ProfileController extends Controller
     public function show(Request $request, ProgressionService $progressionService): JsonResponse
     {
         // If user is authenticated, show their profile
-        if ($user = $request->user()) {
+        if ($user = $this->resolveApiUser($request)) {
             $profile = PlayerProfile::query()->where('user_id', $user->id)->first();
 
             if (! $profile) {

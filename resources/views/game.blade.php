@@ -148,6 +148,7 @@
             <button class="tab-btn active" data-mode="local" type="button">Local</button>
             <button class="tab-btn" data-mode="online" type="button">Online</button>
             <button class="tab-btn" data-mode="vs" type="button">VS</button>
+            <button class="tab-btn" data-mode="allvsbot" type="button">All VS Bot</button>
             <button class="tab-btn" data-mode="pokedex" type="button">Pokédex</button>
             <button class="tab-btn" data-mode="user" type="button">Usuario</button>
         </nav>
@@ -236,6 +237,45 @@
                 <div id="vs-state" class="room-state hidden"></div>
             </section>
 
+            <section class="panel mode-panel" id="mode-allvsbot">
+                <h2>Modo All VS Bot</h2>
+                <p class="muted">Hasta 4 jugadores contra un Pokémon aleatorio. Turnos rotativos y límite de preguntas por jugador.</p>
+                <div class="room-forms">
+                    <div class="sub-panel">
+                        <h3>Crear All VS Bot</h3>
+                        <input id="allvsbot-nickname" class="input" type="text" placeholder="Tu nombre">
+                        <input id="allvsbot-room-name" class="input" type="text" placeholder="Nombre de sala (opcional)">
+                        <select id="allvsbot-difficulty" class="input">
+                            <option value="easy">Fácil</option>
+                            <option value="normal">Normal</option>
+                        </select>
+                        <select id="allvsbot-question-limit" class="input">
+                            <option value="2">2 preguntas por jugador</option>
+                            <option value="3" selected>3 preguntas por jugador</option>
+                            <option value="4">4 preguntas por jugador</option>
+                            <option value="5">5 preguntas por jugador</option>
+                        </select>
+                        <select id="allvsbot-visibility" class="input">
+                            <option value="private">Privada (código)</option>
+                            <option value="public">Pública (global)</option>
+                        </select>
+                        <button id="allvsbot-create-btn" class="btn" type="button">Crear</button>
+                    </div>
+                    <div class="sub-panel">
+                        <h3>Unirse All VS Bot</h3>
+                        <input id="allvsbot-code" class="input" type="text" maxlength="6" placeholder="Código">
+                        <input id="allvsbot-join-nickname" class="input" type="text" placeholder="Tu nombre">
+                        <button id="allvsbot-join-btn" class="btn" type="button">Unirse</button>
+                    </div>
+                </div>
+                <div class="sub-panel" style="margin-top: .85rem;">
+                    <h3>Salas All VS Bot públicas</h3>
+                    <button id="allvsbot-refresh-public-btn" class="btn" type="button">Actualizar lista</button>
+                    <div id="allvsbot-public-list" class="list"></div>
+                </div>
+                <div id="allvsbot-state" class="room-state hidden"></div>
+            </section>
+
             <section class="panel mode-panel" id="mode-pokedex">
                 <h2>Pokédex Completa</h2>
                 <p class="muted">Todos los Pokémon disponibles ordenados por número de Pokédex.</p>
@@ -283,6 +323,11 @@
                 </div>
                 <div id="achievements-summary" class="answer-badge">Sin progreso todavía.</div>
                 <div id="achievements-grid" class="achievements-grid"></div>
+                <div class="sub-panel" style="margin-top:.75rem;">
+                    <h3>Pokémon Obtenidos</h3>
+                    <div id="collection-summary" class="answer-badge">Aún no tienes Pokémon en tu colección.</div>
+                    <div id="collection-grid" class="pokedex-grid"></div>
+                </div>
             </section>
         </main>
     </div>

@@ -6,6 +6,7 @@ const langKey = 'pwi_lang';
 const authTokenKey = 'pwi_auth_token';
 const onlineRoomKey = 'pwi_online_room';
 const vsRoomKey = 'pwi_vs_room';
+const allvsbotRoomKey = 'pwi_allvsbot_room';
 
 const i18n = {
     es: {
@@ -114,10 +115,13 @@ const state = {
     onlineRoom: null,
     vsRoomCode: localStorage.getItem(vsRoomKey) || '',
     vsRoom: null,
+    allvsbotRoomCode: localStorage.getItem(allvsbotRoomKey) || '',
+    allvsbotRoom: null,
     profile: null,
     avatarCatalog: {},
     achievements: null,
     gacha: null,
+    collection: null,
 };
 
 const roomEventState = {
@@ -125,6 +129,9 @@ const roomEventState = {
         lastPendingCount: 0,
     },
     vs: {
+        lastPendingCount: 0,
+    },
+    allvsbot: {
         lastPendingCount: 0,
     },
 };
@@ -197,10 +204,27 @@ const localAnswer = document.getElementById('local-answer');
 
 const onlineStateBox = document.getElementById('online-state');
 const vsStateBox = document.getElementById('vs-state');
+const allvsbotStateBox = document.getElementById('allvsbot-state');
 const onlinePublicRoomsList = document.getElementById('online-public-list');
 const refreshOnlinePublicBtn = document.getElementById('online-refresh-public-btn');
 const vsPublicRoomsList = document.getElementById('vs-public-list');
 const refreshVsPublicBtn = document.getElementById('vs-refresh-public-btn');
+const allvsbotPublicRoomsList = document.getElementById('allvsbot-public-list');
+const refreshAllVsBotPublicBtn = document.getElementById('allvsbot-refresh-public-btn');
+const collectionSummary = document.getElementById('collection-summary');
+const collectionGrid = document.getElementById('collection-grid');
+
+function roomStateContainer(mode) {
+    if (mode === 'online') return onlineStateBox;
+    if (mode === 'vs') return vsStateBox;
+    return allvsbotStateBox;
+}
+
+function publicRoomsContainer(mode) {
+    if (mode === 'online') return onlinePublicRoomsList;
+    if (mode === 'vs') return vsPublicRoomsList;
+    return allvsbotPublicRoomsList;
+}
 
 const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
 const modePanels = Array.from(document.querySelectorAll('.mode-panel'));
@@ -282,6 +306,11 @@ function showToast({ title, body, tone = 'info', duration = 4200 }) {
         setTimeout(() => toast.remove(), 220);
     };
 
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        const pattern = tone === 'error' ? [90, 40, 90] : tone === 'warning' ? [70, 35, 70] : [35, 25, 35];
+        navigator.vibrate(pattern);
+    }
+
     toast.querySelector('.toast-close')?.addEventListener('click', remove);
     stack.appendChild(toast);
 
@@ -319,6 +348,19 @@ function maybeNotifyRoomEvents(mode, previousRoom, currentRoom) {
 
     if (
         currentRoom.mode === 'vs'
+        && currentRoom.status === 'active'
+        && currentRoom.turn_session_id === me.session_id
+        && previousRoom.turn_session_id !== me.session_id
+    ) {
+        showToast({
+            title: t('notifYourTurnTitle'),
+            body: t('notifYourTurnBody'),
+            tone: 'info',
+        });
+    }
+
+    if (
+        currentRoom.mode === 'allvsbot'
         && currentRoom.status === 'active'
         && currentRoom.turn_session_id === me.session_id
         && previousRoom.turn_session_id !== me.session_id
@@ -516,6 +558,8 @@ async function registerAuth() {
     state.authUser = payload.user;
     renderAuthStatus();
     await loadProfile();
+    await loadAchievements();
+    await loadGacha();
     renderProfileHud();
 }
 
@@ -533,6 +577,8 @@ async function loginAuth() {
     state.authUser = payload.user;
     renderAuthStatus();
     await loadProfile();
+    await loadAchievements();
+    await loadGacha();
     renderProfileHud();
 }
 
@@ -547,9 +593,11 @@ async function logoutAuth() {
     state.authUser = null;
     state.achievements = null;
     state.gacha = null;
+    state.collection = null;
     renderAuthStatus();
     renderAchievements();
     renderGacha();
+    renderCollection();
 }
 
 function consumeAuthFromUrl() {
@@ -621,7 +669,7 @@ function renderAvatarOptions() {
 function autoFillNicknames() {
     const nickname = state.profile?.nickname || state.authUser?.name
         || `Invitado-${Math.floor(Math.random() * 9000000000 + 1000000000)}`;
-    ['online-nickname', 'vs-nickname', 'online-join-nickname', 'vs-join-nickname'].forEach((id) => {
+    ['online-nickname', 'vs-nickname', 'allvsbot-nickname', 'online-join-nickname', 'vs-join-nickname', 'allvsbot-join-nickname'].forEach((id) => {
         const el = document.getElementById(id);
         if (el && !el.value) {
             el.value = nickname;
@@ -719,14 +767,46 @@ function renderAchievements() {
     }).join('');
 }
 
+function renderCollection() {
+    if (!collectionSummary || !collectionGrid) {
+        return;
+    }
+
+    const collection = state.collection;
+    if (!collection || !Array.isArray(collection.items) || !collection.items.length) {
+        collectionSummary.textContent = 'Aún no tienes Pokémon en tu colección.';
+        collectionGrid.innerHTML = '';
+        return;
+    }
+
+    collectionSummary.textContent = `Colección: ${collection.unique_pokemon} únicos · ${collection.total_opened} cápsulas abiertas`;
+    collectionGrid.innerHTML = collection.items.map((item) => {
+        const pokemon = item.pokemon || {};
+        return `<button type="button" class="pokedex-card" data-pokemon-detail='${JSON.stringify(pokemon).replace(/'/g, '&#39;')}'>
+            <img src="${pokemon.sprite || localPokemonSprite(pokemon.pokeapi_id)}" alt="${pokemon.display_name || 'pokemon'}">
+            <div class="id">#${pokemon.pokeapi_id || '?'}</div>
+            <div class="name">${pokemon.display_name || 'Pokemon'}</div>
+        </button>`;
+    }).join('');
+
+    collectionGrid.querySelectorAll('.pokedex-card').forEach((card) => {
+        card.addEventListener('click', () => {
+            const detail = card.dataset.pokemonDetail;
+            if (!detail) return;
+            showPokedexDetail(JSON.parse(detail));
+        });
+    });
+}
+
 async function loadAchievements() {
-    if (!state.playerToken) {
+    if (!state.playerToken && !state.authToken) {
         state.achievements = null;
         renderAchievements();
         return;
     }
 
-    const payload = await api(`/achievements?player_token=${encodeURIComponent(state.playerToken)}`);
+    const tokenQuery = state.playerToken ? `?player_token=${encodeURIComponent(state.playerToken)}` : '';
+    const payload = await api(`/achievements${tokenQuery}`);
     state.achievements = payload.achievements;
     renderAchievements();
     if (state.profile) {
@@ -774,15 +854,20 @@ function renderGacha() {
 }
 
 async function loadGacha() {
-    if (!state.playerToken) {
+    if (!state.playerToken && !state.authToken) {
         state.gacha = null;
+        state.collection = null;
         renderGacha();
+        renderCollection();
         return;
     }
 
-    const payload = await api(`/gacha?player_token=${encodeURIComponent(state.playerToken)}`);
+    const tokenQuery = state.playerToken ? `?player_token=${encodeURIComponent(state.playerToken)}` : '';
+    const payload = await api(`/gacha${tokenQuery}`);
     state.gacha = payload.gacha;
+    state.collection = payload.collection || null;
     renderGacha();
+    renderCollection();
 }
 
 function closeGachaCinematic() {
@@ -993,7 +1078,9 @@ async function openGacha() {
 
         await animateGachaOpen(payload.reward);
         state.gacha = payload.gacha;
+        state.collection = payload.collection || state.collection;
         renderGacha();
+        renderCollection();
         await loadAchievements();
     } catch (error) {
         gachaResult.textContent = error.message;
@@ -1248,6 +1335,7 @@ async function evaluateLocalQuestion() {
 function roomStateHtml(room) {
     const me = room.players.find((player) => player.is_me);
     const amTurn = room.turn_session_id && me && room.turn_session_id === me.session_id;
+    const isAllVsBot = room.mode === 'allvsbot';
 
     if (room.my_profile) {
         state.profile = {
@@ -1265,7 +1353,7 @@ function roomStateHtml(room) {
         })
         .join(' ');
 
-    const pendingQuestions = room.questions.filter((question) => question.is_pending_for_me);
+    const pendingQuestions = isAllVsBot ? [] : room.questions.filter((question) => question.is_pending_for_me);
 
     const pendingHtml = pendingQuestions.length
         ? `<div><h3>Respuestas pendientes</h3>${pendingQuestions
@@ -1324,7 +1412,7 @@ function roomStateHtml(room) {
 
     // Timer proposal
     let timerProposalHtml = '';
-    if (room.status !== 'finished' && !timer.enabled) {
+    if (room.status !== 'finished' && !timer.enabled && (room.players?.length === 2)) {
         if (timer.proposed_by && timer.proposed_by !== me?.session_id) {
             timerProposalHtml = `<div class="timer-proposal">
                 <p><strong>${timer.proposed_by_name}</strong> propone activar reloj (3 min por jugador)</p>
@@ -1343,6 +1431,13 @@ function roomStateHtml(room) {
         ? `<button class="btn btn-danger" type="button" data-action="surrender">🏳️ Rendirse</button>`
         : '';
 
+    const allVsBotInfo = isAllVsBot
+        ? `<div class="timer-proposal">
+            <p><strong>Todos vs Bot</strong></p>
+            <p class="muted">Preguntas por jugador: ${room.allvsbot?.question_limit_per_player ?? 3} · Usadas: ${room.allvsbot?.my_questions_used ?? 0}</p>
+        </div>`
+        : '';
+
     return `
         <div>
             <p><strong>Codigo:</strong> ${room.code} | <strong>Modo:</strong> ${room.mode} | <strong>Dificultad:</strong> ${room.difficulty}</p>
@@ -1350,12 +1445,13 @@ function roomStateHtml(room) {
             ${room.room_name ? `<p><strong>Sala:</strong> ${room.room_name}</p>` : ''}
             <p><strong>Estado:</strong> ${room.status}${amTurn ? ' | Te toca' : ''}</p>
             ${winnerHtml}
+            ${allVsBotInfo}
             ${timerHtml}
             ${timerProposalHtml}
             <p class="muted">Pokemon cargados en tu base: ${room.pokedex_loaded}</p>
             <div>${playersHtml}</div>
 
-            <div style="margin-top: 1rem;">
+            ${isAllVsBot ? '' : `<div style="margin-top: 1rem;">
                 <h3>Elegir Pokemon oculto</h3>
                 <div class="inline-grid">
                     <input class="input" id="room-hidden-search" type="text" placeholder="Buscar Pokemon o #">
@@ -1363,7 +1459,7 @@ function roomStateHtml(room) {
                 </div>
                 <div id="room-hidden-results" class="list"></div>
                 ${me?.hidden_pokemon ? `<div class="pokemon-card">${pokemonCardHtml(me.hidden_pokemon)}</div>` : ''}
-            </div>
+            </div>`}
 
             <div style="margin-top: 1rem;">
                 <h3>Hacer pregunta</h3>
@@ -1371,8 +1467,8 @@ function roomStateHtml(room) {
                 <div class="inline-grid">
                     <button class="btn" type="button" data-action="ask-key">Pregunta estructurada</button>
                 </div>
-                <input id="room-question-text" class="input" type="text" placeholder="Pregunta libre (opcional)">
-                <button class="btn" type="button" data-action="ask-free" style="margin-top: .5rem;">Enviar libre</button>
+                ${isAllVsBot ? '' : `<input id="room-question-text" class="input" type="text" placeholder="Pregunta libre (opcional)">
+                <button class="btn" type="button" data-action="ask-free" style="margin-top: .5rem;">Enviar libre</button>`}
             </div>
 
             <div style="margin-top: 1rem;">
@@ -1404,7 +1500,7 @@ function attachPokemonResultActions(container, action, callback) {
 }
 
 function bindRoomEvents(mode, room) {
-    const container = mode === 'online' ? onlineStateBox : vsStateBox;
+    const container = roomStateContainer(mode);
 
     const refreshRoom = async () => {
         await loadRoom(mode, room.code);
@@ -1564,7 +1660,7 @@ function bindRoomEvents(mode, room) {
 }
 
 async function renderRoom(mode, room) {
-    const container = mode === 'online' ? onlineStateBox : vsStateBox;
+    const container = roomStateContainer(mode);
     container.classList.remove('hidden');
     container.innerHTML = roomStateHtml(room);
     bindRoomEvents(mode, room);
@@ -1572,16 +1668,20 @@ async function renderRoom(mode, room) {
 
 async function loadRoom(mode, code) {
     const data = await api(`/rooms/${code}?player_token=${encodeURIComponent(state.playerToken)}`);
-    const previousRoom = mode === 'online' ? state.onlineRoom : state.vsRoom;
+    const previousRoom = mode === 'online' ? state.onlineRoom : (mode === 'vs' ? state.vsRoom : state.allvsbotRoom);
 
     if (mode === 'online') {
         state.onlineRoom = data.room;
         state.onlineRoomCode = data.room.code;
         localStorage.setItem(onlineRoomKey, data.room.code);
-    } else {
+    } else if (mode === 'vs') {
         state.vsRoom = data.room;
         state.vsRoomCode = data.room.code;
         localStorage.setItem(vsRoomKey, data.room.code);
+    } else {
+        state.allvsbotRoom = data.room;
+        state.allvsbotRoomCode = data.room.code;
+        localStorage.setItem(allvsbotRoomKey, data.room.code);
     }
 
     maybeNotifyRoomEvents(mode, previousRoom, data.room);
@@ -1601,6 +1701,7 @@ async function createRoom(mode, nickname, difficulty, extra = {}) {
             language: state.language,
             visibility: extra.visibility || 'private',
             room_name: extra.roomName || null,
+            question_limit_per_player: extra.question_limit_per_player || null,
             player_token: state.playerToken || null,
         },
     });
@@ -1627,7 +1728,7 @@ async function joinRoom(mode, code, nickname) {
 }
 
 async function loadPublicRooms(mode) {
-    const listElement = mode === 'online' ? onlinePublicRoomsList : vsPublicRoomsList;
+    const listElement = publicRoomsContainer(mode);
     const payload = await api(`/rooms/public?mode=${mode}&lang=${state.language}`);
     const rooms = payload.rooms || [];
 
@@ -1639,7 +1740,7 @@ async function loadPublicRooms(mode) {
     listElement.innerHTML = rooms.map((room) => `
         <button type="button" class="search-item" data-action="join-public" data-mode="${mode}" data-code="${room.code}" ${room.is_joinable ? '' : 'disabled'}>
             <img src="${pokeballSpriteUrl()}" alt="room">
-            <span>${room.room_name || 'Sala sin nombre'} · ${room.code} · ${room.players_count}/${room.max_players || (mode === 'online' ? 4 : 2)} · ${room.difficulty} · ${room.language.toUpperCase()}</span>
+            <span>${room.room_name || 'Sala sin nombre'} · ${room.code} · ${room.players_count}/${room.max_players || (mode === 'online' ? 4 : 2)} · ${room.difficulty} · ${room.language.toUpperCase()}${room.mode === 'allvsbot' ? ` · ${room.question_limit_per_player || 3}Q` : ''}</span>
         </button>
     `).join('');
 
@@ -1648,7 +1749,9 @@ async function loadPublicRooms(mode) {
             const selectedMode = button.dataset.mode;
             const nickname = selectedMode === 'online'
                 ? (document.getElementById('online-join-nickname').value || document.getElementById('online-nickname').value)
-                : (document.getElementById('vs-join-nickname').value || document.getElementById('vs-nickname').value);
+                : (selectedMode === 'vs'
+                    ? (document.getElementById('vs-join-nickname').value || document.getElementById('vs-nickname').value)
+                    : (document.getElementById('allvsbot-join-nickname').value || document.getElementById('allvsbot-nickname').value));
 
             if (!nickname.trim()) {
                 alert(t('joinNeedName'));
@@ -1665,7 +1768,7 @@ async function loadPublicRooms(mode) {
 }
 
 async function loadAllPublicRooms() {
-    await Promise.all([loadPublicRooms('online'), loadPublicRooms('vs')]);
+    await Promise.all([loadPublicRooms('online'), loadPublicRooms('vs'), loadPublicRooms('allvsbot')]);
 }
 
 authRegisterBtn.addEventListener('click', async () => {
@@ -1762,6 +1865,7 @@ localSearchInput.addEventListener('input', debounce(handleLocalSearch, 250));
 localEvaluateBtn.addEventListener('click', evaluateLocalQuestion);
 refreshOnlinePublicBtn.addEventListener('click', () => loadPublicRooms('online'));
 refreshVsPublicBtn.addEventListener('click', () => loadPublicRooms('vs'));
+refreshAllVsBotPublicBtn?.addEventListener('click', () => loadPublicRooms('allvsbot'));
 
 languageSelect.addEventListener('change', async () => {
     setLanguage(languageSelect.value);
@@ -1775,12 +1879,18 @@ languageSelect.addEventListener('change', async () => {
     if (state.vsRoomCode) {
         await loadRoom('vs', state.vsRoomCode);
     }
+
+    if (state.allvsbotRoomCode) {
+        await loadRoom('allvsbot', state.allvsbotRoomCode);
+    }
 });
 
 const onlineCreateBtn = document.getElementById('online-create-btn');
 const onlineJoinBtn = document.getElementById('online-join-btn');
 const vsCreateBtn = document.getElementById('vs-create-btn');
 const vsJoinBtn = document.getElementById('vs-join-btn');
+const allvsbotCreateBtn = document.getElementById('allvsbot-create-btn');
+const allvsbotJoinBtn = document.getElementById('allvsbot-join-btn');
 
 onlineCreateBtn.addEventListener('click', async () => {
     try {
@@ -1838,6 +1948,35 @@ vsJoinBtn.addEventListener('click', async () => {
     }
 });
 
+allvsbotCreateBtn?.addEventListener('click', async () => {
+    try {
+        await createRoom(
+            'allvsbot',
+            document.getElementById('allvsbot-nickname').value,
+            document.getElementById('allvsbot-difficulty').value,
+            {
+                visibility: document.getElementById('allvsbot-visibility').value,
+                roomName: document.getElementById('allvsbot-room-name').value,
+                question_limit_per_player: Number(document.getElementById('allvsbot-question-limit').value || 3),
+            },
+        );
+    } catch (error) {
+        alert(error.message);
+    }
+});
+
+allvsbotJoinBtn?.addEventListener('click', async () => {
+    try {
+        await joinRoom(
+            'allvsbot',
+            document.getElementById('allvsbot-code').value,
+            document.getElementById('allvsbot-join-nickname').value,
+        );
+    } catch (error) {
+        alert(error.message);
+    }
+});
+
 setInterval(async () => {
     try {
         if (isUserTyping()) {
@@ -1850,6 +1989,10 @@ setInterval(async () => {
 
         if (state.vsRoomCode) {
             await loadRoom('vs', state.vsRoomCode);
+        }
+
+        if (state.allvsbotRoomCode) {
+            await loadRoom('allvsbot', state.allvsbotRoomCode);
         }
     } catch (error) {
         // polling silencioso
@@ -1902,6 +2045,7 @@ setInterval(async () => {
         await loadAuthMe();
         await loadQuestionCatalog();
         await loadProfile();
+        await loadAchievements();
         await loadGacha();
         await loadAllPublicRooms();
 
@@ -1924,6 +2068,16 @@ setInterval(async () => {
             } catch (_) {
                 state.vsRoomCode = '';
                 localStorage.removeItem(vsRoomKey);
+            }
+        }
+        if (state.allvsbotRoomCode) {
+            try {
+                await loadRoom('allvsbot', state.allvsbotRoomCode);
+                tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === 'allvsbot'));
+                modePanels.forEach((p) => p.classList.toggle('active', p.id === 'mode-allvsbot'));
+            } catch (_) {
+                state.allvsbotRoomCode = '';
+                localStorage.removeItem(allvsbotRoomKey);
             }
         }
 
