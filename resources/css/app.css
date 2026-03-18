@@ -1203,6 +1203,33 @@ a.btn {
     text-align: center;
 }
 
+.collection-card {
+    position: relative;
+}
+
+.collection-shiny-star {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.35rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    line-height: 1;
+    color: #111827;
+    background: radial-gradient(circle at 32% 28%, #fef9c3, #f59e0b);
+    border: 1px solid #b45309;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
+.collection-card-shiny {
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.3), 0 6px 16px rgba(245, 158, 11, 0.2);
+}
+
 .pokedex-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
@@ -1282,6 +1309,33 @@ a.btn {
     max-width: 440px;
     width: 90%;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.collection-detail-inner {
+    max-width: 520px;
+}
+
+.collection-detail-shiny {
+    background: linear-gradient(165deg, #ffffff 0%, #fffbeb 60%, #fef3c7 100%);
+    border: 2px solid #fbbf24;
+}
+
+.collection-modal-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.5rem;
+    padding-right: 1.75rem;
+}
+
+.collection-modal-shiny {
+    background: #f59e0b;
+    color: #1f2937;
+    border-color: #d97706;
+}
+
+.collection-modal-meta {
+    margin-bottom: 0.6rem;
 }
 
 .pokedex-detail-inner.pokedex-detail-locked {

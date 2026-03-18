@@ -1234,22 +1234,84 @@ function renderCollection() {
     collectionSummary.textContent = `Colección: ${collection.unique_pokemon} únicos · ${collection.total_opened} cápsulas abiertas`;
     collectionGrid.innerHTML = collection.items.map((item) => {
         const pokemon = item.pokemon || {};
-        return `<button type="button" class="pokedex-card" data-pokemon-detail='${JSON.stringify(pokemon).replace(/'/g, '&#39;')}'>
+        const isShiny = Boolean(item.is_shiny || item.rarity === 'shiny');
+        return `<button type="button" class="pokedex-card collection-card ${isShiny ? 'collection-card-shiny' : ''}" data-reward-detail='${JSON.stringify(item).replace(/'/g, '&#39;')}'>
+            ${isShiny ? '<span class="collection-shiny-star" aria-label="Shiny" title="Shiny">★</span>' : ''}
             <img src="${pokemon.sprite || localPokemonSprite(pokemon.pokeapi_id)}" alt="${pokemon.display_name || 'pokemon'}">
-            <div class="id">#${pokemon.pokeapi_id || '?'}</div>
-            <div class="name">${pokemon.display_name || 'Pokemon'}</div>
+            <span class="pokedex-card-num">#${pokemon.pokeapi_id || '?'}</span>
+            <span class="pokedex-card-name">${pokemon.display_name || 'Pokemon'}</span>
         </button>`;
     }).join('');
 
-    collectionGrid.querySelectorAll('.pokedex-card').forEach((card) => {
-        card.addEventListener('click', () => {
-            const detail = card.dataset.pokemonDetail;
+    collectionGrid.querySelectorAll('.collection-card').forEach((card) => {
+        card.addEventListener('click', async () => {
+            const detail = card.dataset.rewardDetail;
             if (!detail) return;
-            showPokedexDetail(JSON.parse(detail));
+            await showCollectionRewardDetail(JSON.parse(detail));
         });
     });
 
     refreshVisiblePokedexCards();
+}
+
+function rewardSourceLabel(source) {
+    const map = {
+        level_up: 'Subida de nivel',
+        tier_up: 'Tier Up',
+        admin: 'Administrador',
+    };
+
+    return map[source] || source || 'Desconocida';
+}
+
+async function showCollectionRewardDetail(reward) {
+    if (!pokedexDetail || !reward?.pokemon) {
+        return;
+    }
+
+    const pokemonBase = reward.pokemon || {};
+    let pokemon = {
+        ...pokemonBase,
+        sprite: pokemonBase.sprite || localPokemonSprite(pokemonBase.pokeapi_id),
+    };
+
+    if (pokemonBase.id) {
+        try {
+            const response = await api(`/pokemon/${pokemonBase.id}`);
+            if (response?.data) {
+                pokemon = {
+                    ...response.data,
+                    sprite: pokemonBase.sprite || pokemonSpriteUrl(response.data),
+                };
+            }
+        } catch (error) {
+            // Keep fallback payload if full detail lookup fails.
+        }
+    }
+
+    const shinyTag = reward.is_shiny || reward.rarity === 'shiny'
+        ? '<span class="pill collection-modal-shiny">★ Shiny</span>'
+        : '';
+    const openedAt = reward.opened_at
+        ? new Date(reward.opened_at).toLocaleString(state.language === 'en' ? 'en-US' : 'es-MX')
+        : '—';
+
+    pokedexDetail.classList.remove('hidden');
+    pokedexDetail.innerHTML = `
+        <div class="pokedex-detail-inner collection-detail-inner ${reward.is_shiny || reward.rarity === 'shiny' ? 'collection-detail-shiny' : ''}">
+            <button type="button" class="pokedex-detail-close" id="pokedex-detail-close">&times;</button>
+            <div class="collection-modal-head">
+                ${shinyTag}
+                <span class="rarity-pill rarity-${reward.rarity}">${rarityLabel(reward.rarity)}</span>
+            </div>
+            <div class="muted collection-modal-meta">Ball: ${reward.ball_type || 'poke-ball'} · Fuente: ${rewardSourceLabel(reward.source)} · Abierto: ${openedAt}</div>
+            <div class="pokemon-card">${pokemonCardHtml(pokemon)}</div>
+        </div>
+    `;
+
+    document.getElementById('pokedex-detail-close')?.addEventListener('click', () => {
+        pokedexDetail.classList.add('hidden');
+    });
 }
 
 function refreshVisiblePokedexCards() {
