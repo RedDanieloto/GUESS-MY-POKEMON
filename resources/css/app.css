@@ -571,6 +571,15 @@ a.btn {
 .gacha-cinematic-reveal .pokemon-card {
     margin-top: 0.4rem;
     background: rgba(255, 255, 255, 0.95);
+    color: #0f172a;
+}
+
+.gacha-cinematic-reveal .pokemon-card strong {
+    color: #0f172a;
+}
+
+.gacha-cinematic-reveal .pokemon-card .muted {
+    color: #334155;
 }
 
 .gacha-cinematic-card.cinematic-shake {
