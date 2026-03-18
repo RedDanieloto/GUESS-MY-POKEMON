@@ -85,6 +85,7 @@ class RoomController extends Controller
 
         $payload = $rooms->map(function (GameRoom $room) use ($language): array {
             $playersCount = RoomPlayer::query()->where('game_room_id', $room->id)->count();
+            $maxPlayers = $room->mode === 'online' ? 4 : 2;
 
             return [
                 'code' => $room->code,
@@ -95,7 +96,8 @@ class RoomController extends Controller
                 'language' => $room->language,
                 'status' => $room->status,
                 'players_count' => $playersCount,
-                'is_joinable' => $playersCount < 2 && $room->status !== 'finished',
+                'max_players' => $maxPlayers,
+                'is_joinable' => $playersCount < $maxPlayers && $room->status !== 'finished',
                 'type_labels' => QuestionCatalog::typeLabels($language),
             ];
         });
@@ -131,8 +133,9 @@ class RoomController extends Controller
             ]);
         }
 
+        $maxPlayers = $room->mode === 'online' ? 4 : 2;
         $currentPlayers = RoomPlayer::query()->where('game_room_id', $room->id)->count();
-        if ($currentPlayers >= 2) {
+        if ($currentPlayers >= $maxPlayers) {
             return response()->json(['message' => 'La sala ya está llena'], 422);
         }
 

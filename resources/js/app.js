@@ -37,6 +37,22 @@ const i18n = {
         authErrorSocialiteMissing: 'Login con Google no disponible en servidor (falta Socialite).',
         authErrorGoogleRedirect: 'No se pudo iniciar login con Google.',
         authErrorGoogleCallback: 'Google devolvió error al finalizar login.',
+        notifPlayerJoinedTitle: 'Nuevo jugador',
+        notifPlayerJoinedBody: '{name} se unio a tu partida.',
+        notifYourTurnTitle: 'Tu turno',
+        notifYourTurnBody: 'Te toca preguntar ahora.',
+        notifOnlineActiveTitle: 'Partida activa',
+        notifOnlineActiveBody: 'Ya puedes empezar a preguntar.',
+        notifPendingTitle: 'Respuesta pendiente',
+        notifPendingBody: 'Tienes preguntas por responder.',
+        notifTimerProposalTitle: 'Reloj propuesto',
+        notifTimerProposalBody: '{name} propone activar el reloj de 3 minutos.',
+        notifTimerEnabledTitle: 'Reloj activado',
+        notifTimerEnabledBody: 'Se activo el modo reloj para esta partida.',
+        notifWinTitle: 'Victoria',
+        notifWinBody: 'Ganaste la partida.',
+        notifLoseTitle: 'Partida finalizada',
+        notifLoseBody: 'La partida termino. Ganador: {name}.',
     },
     en: {
         syncing: 'Syncing...',
@@ -67,6 +83,22 @@ const i18n = {
         authErrorSocialiteMissing: 'Google login is not available on server (Socialite missing).',
         authErrorGoogleRedirect: 'Could not start Google login.',
         authErrorGoogleCallback: 'Google returned an error while finishing login.',
+        notifPlayerJoinedTitle: 'Player joined',
+        notifPlayerJoinedBody: '{name} joined your match.',
+        notifYourTurnTitle: 'Your turn',
+        notifYourTurnBody: 'It is your turn to ask now.',
+        notifOnlineActiveTitle: 'Match active',
+        notifOnlineActiveBody: 'You can start asking questions now.',
+        notifPendingTitle: 'Pending answer',
+        notifPendingBody: 'You have questions to answer.',
+        notifTimerProposalTitle: 'Timer proposal',
+        notifTimerProposalBody: '{name} proposes enabling the 3-minute timer.',
+        notifTimerEnabledTitle: 'Timer enabled',
+        notifTimerEnabledBody: 'Chess timer mode is now active for this match.',
+        notifWinTitle: 'Victory',
+        notifWinBody: 'You won the match.',
+        notifLoseTitle: 'Match ended',
+        notifLoseBody: 'The match ended. Winner: {name}.',
     },
 };
 
@@ -86,6 +118,15 @@ const state = {
     avatarCatalog: {},
     achievements: null,
     gacha: null,
+};
+
+const roomEventState = {
+    online: {
+        lastPendingCount: 0,
+    },
+    vs: {
+        lastPendingCount: 0,
+    },
 };
 
 const syncStatus = document.getElementById('sync-status');
@@ -201,6 +242,148 @@ function debounce(fn, wait = 280) {
         }
         timer = setTimeout(() => fn(...args), wait);
     };
+}
+
+function formatText(template, values = {}) {
+    return String(template || '').replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
+}
+
+function ensureToastStack() {
+    let stack = document.getElementById('toast-stack');
+    if (!stack) {
+        stack = document.createElement('div');
+        stack.id = 'toast-stack';
+        stack.className = 'toast-stack';
+        document.body.appendChild(stack);
+    }
+
+    return stack;
+}
+
+function showToast({ title, body, tone = 'info', duration = 4200 }) {
+    const stack = ensureToastStack();
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${tone}`;
+
+    toast.innerHTML = `
+        <div class="toast-header">${title}</div>
+        <div class="toast-body">${body}</div>
+        <button class="toast-close" type="button" aria-label="Cerrar">×</button>
+        <div class="toast-progress"></div>
+    `;
+
+    const progress = toast.querySelector('.toast-progress');
+    if (progress) {
+        progress.style.animationDuration = `${Math.max(1000, duration)}ms`;
+    }
+
+    const remove = () => {
+        toast.classList.add('toast-out');
+        setTimeout(() => toast.remove(), 220);
+    };
+
+    toast.querySelector('.toast-close')?.addEventListener('click', remove);
+    stack.appendChild(toast);
+
+    setTimeout(remove, duration);
+}
+
+function myPlayerInRoom(room) {
+    return room?.players?.find((player) => player.is_me) || null;
+}
+
+function maybeNotifyRoomEvents(mode, previousRoom, currentRoom) {
+    if (!previousRoom || !currentRoom) {
+        return;
+    }
+
+    const me = myPlayerInRoom(currentRoom);
+    if (!me) {
+        return;
+    }
+
+    const previousPlayers = previousRoom.players || [];
+    const currentPlayers = currentRoom.players || [];
+    const previousIds = new Set(previousPlayers.map((player) => player.session_id));
+    const joinedPlayers = currentPlayers.filter((player) => !previousIds.has(player.session_id));
+
+    joinedPlayers
+        .filter((player) => player.session_id !== me.session_id)
+        .forEach((player) => {
+            showToast({
+                title: t('notifPlayerJoinedTitle'),
+                body: formatText(t('notifPlayerJoinedBody'), { name: player.nickname || 'Jugador' }),
+                tone: 'success',
+            });
+        });
+
+    if (
+        currentRoom.mode === 'vs'
+        && currentRoom.status === 'active'
+        && currentRoom.turn_session_id === me.session_id
+        && previousRoom.turn_session_id !== me.session_id
+    ) {
+        showToast({
+            title: t('notifYourTurnTitle'),
+            body: t('notifYourTurnBody'),
+            tone: 'info',
+        });
+    }
+
+    if (
+        currentRoom.mode === 'online'
+        && me.role === 'guesser'
+        && currentRoom.status === 'active'
+        && previousRoom.status !== 'active'
+    ) {
+        showToast({
+            title: t('notifOnlineActiveTitle'),
+            body: t('notifOnlineActiveBody'),
+            tone: 'info',
+        });
+    }
+
+    const currentPending = (currentRoom.questions || []).filter((question) => question.is_pending_for_me).length;
+    const previousPending = roomEventState[mode]?.lastPendingCount ?? 0;
+    if (currentPending > previousPending) {
+        showToast({
+            title: t('notifPendingTitle'),
+            body: t('notifPendingBody'),
+            tone: 'warning',
+        });
+    }
+    roomEventState[mode].lastPendingCount = currentPending;
+
+    const previousProposedBy = previousRoom.timer?.proposed_by || null;
+    const currentProposedBy = currentRoom.timer?.proposed_by || null;
+    if (currentProposedBy && currentProposedBy !== me.session_id && currentProposedBy !== previousProposedBy) {
+        showToast({
+            title: t('notifTimerProposalTitle'),
+            body: formatText(t('notifTimerProposalBody'), { name: currentRoom.timer?.proposed_by_name || 'Jugador' }),
+            tone: 'warning',
+        });
+    }
+
+    if (currentRoom.timer?.enabled && !previousRoom.timer?.enabled) {
+        showToast({
+            title: t('notifTimerEnabledTitle'),
+            body: t('notifTimerEnabledBody'),
+            tone: 'success',
+        });
+    }
+
+    if (currentRoom.status === 'finished' && previousRoom.status !== 'finished') {
+        const winner = currentPlayers.find((player) => player.session_id === currentRoom.winner_session_id);
+        const iWon = winner && winner.session_id === me.session_id;
+        showToast({
+            title: iWon ? t('notifWinTitle') : t('notifLoseTitle'),
+            body: iWon
+                ? t('notifWinBody')
+                : formatText(t('notifLoseBody'), { name: winner?.nickname || 'Jugador' }),
+            tone: iWon ? 'success' : 'error',
+            duration: 5200,
+        });
+    }
 }
 
 function isUserTyping() {
@@ -1389,6 +1572,8 @@ async function renderRoom(mode, room) {
 
 async function loadRoom(mode, code) {
     const data = await api(`/rooms/${code}?player_token=${encodeURIComponent(state.playerToken)}`);
+    const previousRoom = mode === 'online' ? state.onlineRoom : state.vsRoom;
+
     if (mode === 'online') {
         state.onlineRoom = data.room;
         state.onlineRoomCode = data.room.code;
@@ -1398,6 +1583,8 @@ async function loadRoom(mode, code) {
         state.vsRoomCode = data.room.code;
         localStorage.setItem(vsRoomKey, data.room.code);
     }
+
+    maybeNotifyRoomEvents(mode, previousRoom, data.room);
 
     await renderRoom(mode, data.room);
     await loadAchievements();
@@ -1452,7 +1639,7 @@ async function loadPublicRooms(mode) {
     listElement.innerHTML = rooms.map((room) => `
         <button type="button" class="search-item" data-action="join-public" data-mode="${mode}" data-code="${room.code}" ${room.is_joinable ? '' : 'disabled'}>
             <img src="${pokeballSpriteUrl()}" alt="room">
-            <span>${room.room_name || 'Sala sin nombre'} · ${room.code} · ${room.players_count}/2 · ${room.difficulty} · ${room.language.toUpperCase()}</span>
+            <span>${room.room_name || 'Sala sin nombre'} · ${room.code} · ${room.players_count}/${room.max_players || (mode === 'online' ? 4 : 2)} · ${room.difficulty} · ${room.language.toUpperCase()}</span>
         </button>
     `).join('');
 
